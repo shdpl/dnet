@@ -14,9 +14,9 @@ int main(){
 	}
 
 	// listener works in different thread now
-	// give him 10 seconds to work in background
+	// give him some time to work in background
 	// then shutdown
-	usleep(10*1000*1000);
+	usleep(60*1000*1000);
 
 	dnet_shutdown();
 

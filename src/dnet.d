@@ -1,15 +1,10 @@
 /**
-
 */
 module dnet;
 
 private import std.thread;
-private import std.socket;
+public import std.socket; // we need InternetAddress defined
 private import std.stdio;
-
-/// Internet address. Same as std.socket.InternetAddress.
-//public typedef std.socket.InternetAddress InternetAddress;
-
 
 private enum PacketType : ubyte {
 	NONE,
@@ -21,9 +16,10 @@ private enum PacketType : ubyte {
 private UdpSocket Socket;
 private bool IsAlive = false;
 private bool IsServer = false;
-private InternetAddress[] Clients;
-private InternetAddress Server;
-private bool(*OnConnect)(InternetAddress);
+private InternetAddress[char[]] Clients;
+private Address Server;
+//private bool(*OnConnect)(InternetAddress);
+private bool function(InternetAddress) OnConnect;
 private void(*OnDisconnect)(InternetAddress);
 private void(*OnReceive)(ubyte[], InternetAddress);
 private Thread Listener;
@@ -67,7 +63,8 @@ public void dnet_on_receive(ubyte[] data, InternetAddress address){
   Initialization success. If false then you can't use lib.
 */
 public bool dnet_init(
-	bool(*func_connect)(InternetAddress)=&dnet_on_connect, 
+	bool function(InternetAddress) func_connect=&dnet_on_connect,
+	//bool(*func_connect)(InternetAddress)=&dnet_on_connect, 
 	void(*func_disconnect)(InternetAddress)=&dnet_on_disconnect, 
 	void(*func_receive)(ubyte[], InternetAddress)=&dnet_on_receive
 	){
@@ -88,8 +85,18 @@ public bool dnet_init(
  After this call you will need to do dnet_init() again to use it.
 */
 public void dnet_shutdown(){
+	if (IsServer){
+		foreach(InternetAddress a; Clients.values)
+			dnet_server_disconnect(a);
+	}
+	else {
+		ubyte[] buff = [PacketType.DISCONNECT];
+		Socket.sendTo(buff, Server);
+	}
+
 	IsAlive = false;
-	Clients.length = 0;
+	foreach(char[] k, InternetAddress v; Clients)
+		Clients.remove(k);
 	Socket = null;
 }
 
@@ -104,7 +111,6 @@ public bool dnet_server_create(char[] address, ushort port){
 		InternetAddress a = new InternetAddress(address, 3333);
 		Socket.bind(a);
 		IsServer = true;
-		Clients.length = 0;
 
 		Listener = new Thread(&dnet_listening_func, null);
 		Listener.start();
@@ -120,27 +126,24 @@ public bool dnet_server_create(char[] address, ushort port){
   Array of all connected clients.
 */
 public InternetAddress[] dnet_server_get_clients(){
-	return Clients;
+	return Clients.values;
 }
 
 /**
  Sends data to connected client.
 */
 public void dnet_server_send(ubyte[] data, InternetAddress client){
-	Socket.sendTo([cast(ubyte)PacketType.RECEIVE] ~ data, client);
+	ubyte[] buff = [PacketType.RECEIVE];
+	Socket.sendTo(buff ~ data, client);
 }
 
 /**
  Disconnects client.
 */
 public void dnet_server_disconnect(InternetAddress client){
-	InternetAddress[] tmp;
-	foreach(InternetAddress a; Clients){
-		if (client != a){
-			tmp.length = tmp.length + 1;
-			tmp[length - 1] = a;
-		}
-	}
+	//Socket.sendTo(cast(void[])[PacketType.DISCONNECT], client);
+	OnDisconnect(client);
+	Clients.remove(client.toString());
 }
 
 /**
@@ -155,6 +158,8 @@ public bool dnet_client_connect(char[] address, ushort port){
 	Server = new InternetAddress(address, port);
 	Listener = new Thread(&dnet_listening_func, null);
 	Listener.start();
+	ubyte[] buff = [PacketType.CONNECT];
+	Socket.sendTo(buff, Server);
 	return true;
 }
 
@@ -162,7 +167,8 @@ public bool dnet_client_connect(char[] address, ushort port){
  Sends data to connected server.
 */
 public void dnet_client_send(ubyte[] data){
-	Socket.sendTo([cast(ubyte)PacketType.RECEIVE] ~ data, Server);
+	ubyte[] buff = [PacketType.RECEIVE] ;
+	Socket.sendTo(buff ~ data, Server);
 }
 
 
@@ -173,26 +179,26 @@ private int dnet_listening_func(void* unused){
 	Address address;
 	int size;
 	ubyte[1024] buff;
-	ubyte type; // packet type
-	ubyte[] data; // packet data
+	ubyte[] data;
 
 	while (IsAlive){
 		size = Socket.receiveFrom(buff, address);
-		if (size > 1){
+		if (size > 0){
 			writefln("packet received");
-			type = buff[0];
 			data = buff[1..size].dup;
 
-			switch (type){
+			switch (buff[0]){
 				case PacketType.CONNECT:
 					if (IsServer){
-						if (OnConnect(cast(InternetAddress)address)){
-							writefln("added client on list");
-							// todo
+						if (OnConnect == null || OnConnect(cast(InternetAddress)address)) {
+							Clients[address.toString()] = cast(InternetAddress)address;
+							ubyte[] buff2 = [PacketType.CONNECT] ;
+							Socket.sendTo(buff2, cast(InternetAddress)address);
 						}
-						// else reject connection
 					}
-					else{
+					else {
+						if (OnConnect != null)
+							OnConnect(cast(InternetAddress)address);
 					}
 					break;
 				case PacketType.DISCONNECT:

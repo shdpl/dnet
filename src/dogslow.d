@@ -8,6 +8,13 @@ private import dnet;
 ///
 class DogObject {
 ///
+	this(){
+	}
+///
+	~this(){
+	}
+
+///
 	char[] getClassName() {
 		return "";
 	}
@@ -69,6 +76,14 @@ class DogObject {
 
 ///
 public class DogBase {
+	protected bool IsServer;
+///
+	this(){
+	}
+///
+	~this(){
+	}
+
 ///
 	void registerClass(char[] class_name, char[][] class_properties){
 	}
@@ -96,6 +111,14 @@ public class DogBase {
 ///
 public class DogServer : DogBase {
 ///
+	this(){
+		IsServer = true;
+	}
+///
+	~this(){
+	}
+
+///
 	bool create(char[] address, ushort port){
 		return true;
 	}
@@ -107,12 +130,31 @@ public class DogServer : DogBase {
 	void disconnect(uint client_id){
 	}
 }
-
+bool a(InternetAddress a){
+	return true;
+}
 ///
 public class DogClient : DogBase {
-///
-	bool connect(char[] address, ushort port){
+	private bool IsConnected;
+
+	private bool onConnect(InternetAddress address){
 		return true;
+	}
+
+	///
+	this(){
+		IsServer = false;
+		IsConnected = false;
+	}
+	///
+	~this(){
+	}
+
+	///
+	bool connect(char[] address, ushort port){
+		return dnet_init(&onConnect, null, null);
+		// &&
+		//	dnet_client_connect(address, port);
 	}
 ///
 	bool isConnected(){

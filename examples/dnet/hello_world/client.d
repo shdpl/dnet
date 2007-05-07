@@ -15,6 +15,13 @@ int main(){
 
 	dnet_client_send(cast(ubyte[])"Hello world!");
 
+	// listener works in different thread now
+	// give him some time to work in background
+	// then shutdown
+	usleep(10*1000*1000);
+
+
+
 	dnet_shutdown();
 
 	return 0;
