@@ -22,6 +22,7 @@ int main(){
 			foreach(char[] prop_name; getProperties(class_name)){
 				writef(" " ~ prop_name);
 			}
+			writefln("");
 		}
 		writefln("");
 		usleep(1*1000*1000); // wait for one second

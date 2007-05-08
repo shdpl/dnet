@@ -1,6 +1,7 @@
 import dogslow;
 import std.stdio;
 import std.c.time;
+import std.string;
 
 int main(){
 	if (!init()){
@@ -19,6 +20,9 @@ int main(){
                 registerClass("tree", ["age", "height", "kind"]);
 	else if (!classRegistred("fish"))
 		registerClass("fish", ["species", "weight", "size"]);
+
+
+	writefln("registered classess so far: " ~ join(getClassess(), " "));
 
 	shutdown();
 

@@ -15,6 +15,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 module dogslow;
 
 private import std.stdio;
+private import std.string;
+private import std.c.time;
 
 private import dnet;
 
@@ -24,8 +26,11 @@ private InternetAddress[uint] Clients;
 private bool IsServer = false;
 private bool IsConnected = false; // client only
 private uint ClientId; // client only
+private bool Updated = false; // client only
 private enum PacketType : ubyte {
-	CLIENT_ID
+	CLIENT_ID,
+	REG_CLASS,
+	UPDATED
 }
 
 ///
@@ -97,12 +102,19 @@ class DogObject {
 	}
 }
 
-/// Registers class with its properties.
+/// Registers class with its properties. Initial registration is done at server first.
 public void registerClass(char[] class_name, char[][] class_properties){
-	if (classRegistred(class_name))
-		writefln("Class %s is allready registred", class_name);
-	else
+	if (IsServer){
 		Classess[class_name] = class_properties;
+		serverBroadcast(regClassPacket(class_name, class_properties));
+	}
+	else
+		dnet_client_send(regClassPacket(class_name, class_properties));
+}
+
+
+private ubyte[] regClassPacket(char[] class_name, char[][] class_properties){
+	return cast(ubyte[])[PacketType.REG_CLASS]  ~ cast(ubyte[])class_name ~ cast(ubyte[])" "  ~ cast(ubyte[])join(class_properties, " ");
 }
 
 /// Get names of registred classess.
@@ -144,40 +156,74 @@ void deleteObject(char[] class_name, uint object_id){
 void deleteObject(DogObject dog_object){
 }
 
-
 /// on connect handler
 private bool on_connect(InternetAddress address){
 	if (IsServer){
 		for (uint i = 0; i < 16; i++){
 			if ((i in Clients) == null){
-				// accept client connection and send client id
+				writefln("client connected from " ~ address.toString());
+				// accept client connection and send client id to him
 				Clients[i] = address;
 				dnet_server_send([PacketType.CLIENT_ID] ~ [i], address);
+
+				// register a special class to hold client data
+				Classess["clients"] = ["address", "port"];
+
+				// send a newcomer all data
+				foreach(char[] class_name, char[][] class_properties; Classess){
+					dnet_server_send(regClassPacket(class_name, class_properties), address);
+
+				// tell client all data is here, he can continue
+				dnet_server_send([PacketType.UPDATED], address);
+
+				}
 				return true;
 			}
 		}
 		return false;
 	}
-	else
+	else {
 		return true;
+	}
 }
 
 
+///
 private void on_disconnect(InternetAddress address){
-}
-
-private void on_receive(ubyte[] data, InternetAddress address){
 	if (IsServer){
 	}
 	else {
-		switch(data[0]){
-			case PacketType.CLIENT_ID:
+	}
+}
+
+/// sends to all connected clients
+private void serverBroadcast(ubyte[] data){
+	foreach(uint client_id, InternetAddress address; Clients)
+		dnet_server_send(data, address);
+}
+
+private void on_receive(ubyte[] data, InternetAddress address){
+	switch(data[0]){
+		case PacketType.CLIENT_ID:
+			if (!IsServer){
 				ClientId = cast(uint)data[1];
 				IsConnected = true;
-				break;
-			default:
-				break;
-		}
+				writefln("connected to server");
+			}
+			break;
+		case PacketType.REG_CLASS:
+			char[][] buff = split(cast(char[])data[1..length]);
+			Classess[cast(char[])buff[0]] = cast(char[][])buff[1..length];
+			if (IsServer)
+				serverBroadcast(regClassPacket(cast(char[])buff[0], cast(char[][])buff[1..length]));
+			break;
+		case PacketType.UPDATED:
+			if (!IsServer){
+				Updated = true;
+			}
+			break;
+		default:
+			break;
 	}
 }
 
@@ -185,10 +231,11 @@ private void on_receive(ubyte[] data, InternetAddress address){
 
 ///
 public bool init(){
-	registerClass("client", ["address", "port"]);
+	IsConnected = false;
 	dnet_init(&on_connect, &on_disconnect, &on_receive);
 	return true;
 }
+
 
 ///
 public void shutdown(){
@@ -198,7 +245,18 @@ public void shutdown(){
 ///
 public bool clientConnect(char[] address, ushort port){
 	IsServer = false;
-	return dnet_client_connect(address, port);
+	IsConnected = false;
+	Updated = false;
+	// execution must be stoped untill all data is downloaded
+	if (dnet_client_connect(address, port)){
+		writefln("Connecting...");
+		while(!IsConnected){usleep(10000);}
+		writefln("Downloading...");
+		while(!Updated){usleep(10000);}
+		writefln("Connected");
+		return true;
+	}
+	return false;
 }
 
 ///
@@ -224,8 +282,9 @@ public uint[] serverGetClients(){
 
 ///
 public void serverDisconnect(uint client_id){
-	InternetAddress a = Clients[client_id];
-	if (a != null)
-		dnet_server_disconnect(a);
+	if (Clients[client_id] != null){
+		dnet_server_disconnect(Clients[client_id]);
+		Clients.remove(client_id);
+	}
 }
 
