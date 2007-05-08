@@ -8,7 +8,7 @@ int main(){
 		return 1;
 	}
 
-	if (!dnet_server_create("", 3333)){
+	if (!dnet_server_create("localhost", 3333)){
 		writefln("error creating server");
 		return 1;
 	}

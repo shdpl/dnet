@@ -8,7 +8,7 @@ int main(){
 		return 1;
 	}
 
-	if (!dnet_client_connect("127.0.0.1", 3333)){
+	if (!dnet_client_connect("localhost", 3333)){
 		writefln("error preparing resources");
 		return 1;
 	}

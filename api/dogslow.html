@@ -8,7 +8,11 @@
 <dl><dt><big>class <u>DogObject</u>;
 </big></dt>
 <dd><br><br>
-<dl><dt><big>char[] <u>getClassName</u>();
+<dl><dt><big>this();
+</big></dt>
+<dd><br><br>
+</dd>
+<dt><big>char[] <u>getClassName</u>();
 </big></dt>
 <dd><br><br>
 </dd>
@@ -74,10 +78,7 @@
 </dd>
 </dl>
 </dd>
-<dt><big>class <u>DogBase</u>;
-</big></dt>
-<dd><br><br>
-<dl><dt><big>void <u>registerClass</u>(char[] <i>class_name</i>, char[][] <i>class_properties</i>);
+<dt><big>void <u>registerClass</u>(char[] <i>class_name</i>, char[][] <i>class_properties</i>);
 </big></dt>
 <dd><br><br>
 </dd>
@@ -101,45 +102,37 @@
 </big></dt>
 <dd><br><br>
 </dd>
-</dl>
-</dd>
-<dt><big>class <u>DogServer</u>: dogslow.DogBase;
-</big></dt>
-<dd><br><br>
-<dl><dt><big>bool <u>create</u>(char[] <i>address</i>, ushort <i>port</i>);
+<dt><big>bool <u>init</u>();
 </big></dt>
 <dd><br><br>
 </dd>
-<dt><big>uint[] <u>getClients</u>();
+<dt><big>void <u>shutdown</u>();
 </big></dt>
 <dd><br><br>
 </dd>
-<dt><big>void <u>disconnect</u>(uint <i>client_id</i>);
+<dt><big>bool <u>clientConnect</u>(char[] <i>address</i>, ushort <i>port</i>);
 </big></dt>
 <dd><br><br>
 </dd>
-</dl>
-</dd>
-<dt><big>class <u>DogClient</u>: dogslow.DogBase;
-</big></dt>
-<dd><br><br>
-<dl><dt><big>bool <u>connect</u>(char[] <i>address</i>, ushort <i>port</i>);
+<dt><big>bool <u>clientIsConnected</u>();
 </big></dt>
 <dd><br><br>
 </dd>
-<dt><big>bool <u>isConnected</u>();
+<dt><big>uint <u>clientGetId</u>();
 </big></dt>
 <dd><br><br>
 </dd>
-<dt><big>uint <u>getClientId</u>();
+<dt><big>bool <u>serverCreate</u>(char[] <i>address</i>, ushort <i>port</i>);
 </big></dt>
 <dd><br><br>
 </dd>
-<dt><big>void <u>disconnect</u>();
+<dt><big>uint[] <u>serverGetClients</u>();
 </big></dt>
 <dd><br><br>
 </dd>
-</dl>
+<dt><big>void <u>serverDisconnect</u>(uint <i>client_id</i>);
+</big></dt>
+<dd><br><br>
 </dd>
 </dl>
 
