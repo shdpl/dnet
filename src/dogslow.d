@@ -47,7 +47,7 @@ class DogObject {
 		return "";
 	}
 ///
-	uint getObjectId() {
+	uint getId() {
 		return 0;
 	}
 
@@ -218,9 +218,8 @@ private void on_receive(ubyte[] data, InternetAddress address){
 				serverBroadcast(regClassPacket(cast(char[])buff[0], cast(char[][])buff[1..length]));
 			break;
 		case PacketType.UPDATED:
-			if (!IsServer){
+			if (!IsServer)
 				Updated = true;
-			}
 			break;
 		default:
 			break;
@@ -247,7 +246,7 @@ public bool clientConnect(char[] address, ushort port){
 	IsServer = false;
 	IsConnected = false;
 	Updated = false;
-	// execution must be stoped untill all data is downloaded
+	// client program execution must be stoped untill all data is downloaded
 	if (dnet_client_connect(address, port)){
 		writefln("Connecting...");
 		while(!IsConnected){usleep(10000);}
