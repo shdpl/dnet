@@ -17,11 +17,14 @@ module dogslow;
 private import std.stdio;
 private import std.string;
 private import std.c.time;
+private import std.random;
 
 private import dnet;
 
 
 private char[][][char[]] Classess;
+private ubyte[][char[]][uint][char[]] Cache; 
+// cache of all properties, it goes like Cache[class_name][object_id][property_name]
 private InternetAddress[uint] Clients;
 private bool IsServer = false;
 private bool IsConnected = false; // client only
@@ -30,13 +33,21 @@ private bool Updated = false; // client only
 private enum PacketType : ubyte {
 	CLIENT_ID,
 	REG_CLASS,
-	UPDATED
+	UPDATED, 
+	REG_OBJECT,
+	SET_PROP
 }
 
 ///
 class DogObject {
+	private char[] className;
+	private uint objectId;
+
+
 ///
-	this(){
+	this(char[] class_name, uint object_id){
+		className = class_name;
+		objectId = object_id;
 	}
 ///
 	~this(){
@@ -44,15 +55,24 @@ class DogObject {
 
 ///
 	char[] getClassName() {
-		return "";
+		return className;
 	}
 ///
 	uint getId() {
-		return 0;
+		return objectId;
 	}
 
 ///
 	void setString(char[] property_name, char[] value, bool replicate=true){
+		if (IsServer){
+                        Cache[className][objectId][property_name] = cast(ubyte[])value;
+
+			serverBroadcast([cast(ubyte)PacketType.SET_PROP, cast(ubyte)objectId] ~ cast(ubyte[])(format("%s %s ", className, property_name)) ~ cast(ubyte[])value);
+
+		}
+		else {
+			dnet_client_send([cast(ubyte)PacketType.SET_PROP, cast(ubyte)objectId] ~ cast(ubyte[])(format("%s %s ", className, property_name)) ~ cast(ubyte[])value);
+		}
 	}
 ///
 	void setByte(char[] property_name, byte value, bool replicate=true){
@@ -74,7 +94,7 @@ class DogObject {
 	}
 ///	
 	char[] getString(char[] property_name){
-		return "";
+		return cast(char[])Cache[className][objectId][property_name];
 	}
 ///
 	byte getByte(char[] property_name){
@@ -134,13 +154,28 @@ public bool classRegistred(char[] class_name){
 
 ///
 DogObject addObject(char[] class_name){
-	return null;
+	//uint object_id = rand();
+	//while(true){
+	//	if ((object_id in Cache[class_name]) == null)
+	//		break;
+	//	else
+	//		object_id = rand();
+	//}
+	return new DogObject(class_name, cast(ubyte)(rand()/256));
 }
 
 ///
 DogObject[] getObjects(char[] class_name){
-	DogObject[] a;
-	return a;
+	DogObject[] tmp;
+	if ((class_name in Cache) != null){
+		tmp.length = Cache[class_name].length;
+		int i = 0;
+		foreach(uint object_id; Cache[class_name].keys){
+			tmp[i] = new DogObject(class_name, object_id);
+			i++;
+		}
+	}
+	return tmp;
 }
 
 ///
@@ -172,11 +207,22 @@ private bool on_connect(InternetAddress address){
 				// send a newcomer all data
 				foreach(char[] class_name, char[][] class_properties; Classess){
 					dnet_server_send(regClassPacket(class_name, class_properties), address);
+					if ((class_name in Cache) != null && Cache[class_name].length > 0){
+						foreach(uint object_id; Cache[class_name].keys){
+							if (Cache[class_name][object_id].length > 0){
+								foreach(char[] property_name, ubyte[] data; Cache[class_name][object_id]){
+									writefln("sending data for class %s with id %d for property %s with value %s", class_name, object_id, property_name, data);
+									dnet_server_send([cast(ubyte)PacketType.SET_PROP, cast(ubyte)object_id] ~ cast(ubyte[])(format("%s %s ", class_name, property_name)) ~ data, address);
+								}
+							}
+						}
+					}
+				}
 
 				// tell client all data is here, he can continue
 				dnet_server_send([PacketType.UPDATED], address);
 
-				}
+				
 				return true;
 			}
 		}
@@ -220,6 +266,20 @@ private void on_receive(ubyte[] data, InternetAddress address){
 		case PacketType.UPDATED:
 			if (!IsServer)
 				Updated = true;
+			break;
+		case PacketType.SET_PROP:
+			// packet is [packet_type][object_id][space][class_name][space][prop_name][space][value]
+			// I know it is not efficient, but it will be optimized
+
+			uint object_id = cast(uint)data[1];
+			char[][] buff = split(cast(char[])data[2..length], " ");
+			char[] class_name = buff[0];
+			char[] property_name = buff[1];
+
+			writefln("got packet SET_PROP for class %s with id %d for property %s", class_name, object_id, property_name);			
+			Cache[class_name][object_id][property_name] = cast(ubyte[])join(buff[2..length], " ");
+			if (IsServer)
+				serverBroadcast(data);
 			break;
 		default:
 			break;

@@ -10,6 +10,8 @@ $DMD examples/dogslow/hello_world/server.d $LIB -ofbin/dogslow_hello_world_serve
 $DMD examples/dogslow/objects/client.d $LIB -ofbin/dogslow_objects_client
 $DMD examples/dogslow/objects/server.d $LIB -ofbin/dogslow_objects_server
 
+echo "Building documentation. Check ./api folder."
+$DMD -c src/dnet.d src/dogslow.d -Ddapi
 
 rm -f client.o
 rm -f server.o

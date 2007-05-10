@@ -8,7 +8,7 @@
 <dl><dt><big>class <u>DogObject</u>;
 </big></dt>
 <dd><br><br>
-<dl><dt><big>this();
+<dl><dt><big>this(char[] <i>class_name</i>, uint <i>object_id</i>);
 </big></dt>
 <dd><br><br>
 </dd>
@@ -16,7 +16,7 @@
 </big></dt>
 <dd><br><br>
 </dd>
-<dt><big>uint <u>getObjectId</u>();
+<dt><big>uint <u>getId</u>();
 </big></dt>
 <dd><br><br>
 </dd>
@@ -80,7 +80,27 @@
 </dd>
 <dt><big>void <u>registerClass</u>(char[] <i>class_name</i>, char[][] <i>class_properties</i>);
 </big></dt>
-<dd><br><br>
+<dd>Registers class with its properties. Initial registration is done at server first.
+<br><br>
+
+</dd>
+<dt><big>char[][] <u>getClassess</u>();
+</big></dt>
+<dd>Get names of registred classess.
+<br><br>
+
+</dd>
+<dt><big>char[][] <u>getProperties</u>(char[] <i>class_name</i>);
+</big></dt>
+<dd>Get properties of class.
+<br><br>
+
+</dd>
+<dt><big>bool <u>classRegistred</u>(char[] <i>class_name</i>);
+</big></dt>
+<dd>Returns if class is allready registred.
+<br><br>
+
 </dd>
 <dt><big>DogObject <u>addObject</u>(char[] <i>class_name</i>);
 </big></dt>

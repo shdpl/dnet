@@ -16,6 +16,10 @@ int main(){
 
         registerClass("fish", ["name"]);
         DogObject a = addObject("fish");
+	if (a == null){
+		writefln("coul not add object");
+		return 1;
+	}
         a.setString("name", "Flipper");
 
         while(true){
