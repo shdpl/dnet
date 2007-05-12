@@ -1,3 +1,8 @@
-dmd examples/dogslow/hello_world/server.d src/dnet.d src/dogslow.d ws2_32.lib
-dmd examples/dogslow/hello_world/client.d src/dnet.d src/dogslow.d ws2_32.lib
+SET DMD=dmd -debug
+SET INC=src/dnet.d src/dogslow.d
 
+%DMD% -ofbin\dnet_hello_world_server.exe examples/dnet/hello_world/server.d %INC% 
+%DMD% -ofbin\dnet_hello_world_client.exe examples/dnet/hello_world/client.d %INC%
+
+del *.map
+del *.obj

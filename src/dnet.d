@@ -16,11 +16,17 @@ TODO:
 - packet reliability
 - ordered arrival
 - timeout detection when no traffic (pinging thread?)
+
+-replace all ubyte with char (char is unsigned byte, no need for ubyte)
+-wrap all asserts in debug blocks. when compiled with -release asserts are not removed, but program exists withouth any message
+
 */
 module dnet;
 
+version(Windows) pragma(lib, "ws2_32.lib");
+
 private import std.thread;
-public import std.socket; // we need InternetAddress defined
+public import std.socket; // we need InternetAddress publicly defined
 private import std.stdio;
 
 private enum PacketType : ubyte {
@@ -42,6 +48,7 @@ private void(*OnReceive)(ubyte[], InternetAddress);
 private Thread Listener;
 
 
+
 /**
  Built in handler.
  Executed on each connect event with address of remote end as single argument.
@@ -49,10 +56,11 @@ private Thread Listener;
   Should connection be accepted (use it to reject connections from clients if you are server).
 */
 public bool dnet_on_connect(InternetAddress address){
-	writefln("dnet on connect");
-	
-	assert(Socket != null);
-	assert(IsAlive);
+	debug {
+		writefln("dnet on connect");
+		assert(Socket != null);
+		assert(IsAlive);
+	}
 	writefln("Got connect event from " ~ address.toString());
 	return true;
 }
@@ -62,10 +70,11 @@ public bool dnet_on_connect(InternetAddress address){
  Executed on each disconnect event with address of remote end.
 */
 public void dnet_on_disconnect(InternetAddress address){
-	writefln("dnet on disconnect");
-
-	assert(Socket != null);
-	assert(IsAlive);
+	debug {
+		writefln("dnet on disconnect");
+		assert(Socket != null);
+		assert(IsAlive);
+	}
 	writefln("Got diconnect event from " ~ address.toString());
 }
 
@@ -74,10 +83,11 @@ public void dnet_on_disconnect(InternetAddress address){
  Executed on each data receiving, with address of sender and data itself.
 */
 public void dnet_on_receive(ubyte[] data, InternetAddress address){
-	writefln("dnet on receive");
-
-	assert(Socket != null);
-	assert(IsAlive);
+	debug {
+		writefln("dnet on receive");
+		assert(Socket != null);
+		assert(IsAlive);
+	}
 	writefln("Got receive event from " ~ address.toString() ~ " with data '" ~ cast(char[])data ~ "'");
 }
 
@@ -98,8 +108,8 @@ public bool dnet_init(
 	void(*func_receive)(ubyte[], InternetAddress)=&dnet_on_receive
 	){
 
-	writefln("dnet init");
-
+	debug
+		writefln("dnet init");
 
 	OnConnect = func_connect;
 	OnDisconnect = func_disconnect;
@@ -117,10 +127,11 @@ public bool dnet_init(
  After this call you will need to do dnet_init() again to use it.
 */
 public void dnet_shutdown(){
-	writefln("dnet shutdown");
-
-	assert(Socket != null);
-	assert(IsAlive);
+	debug {
+		writefln("dnet shutdown");
+		assert(Socket != null);
+		assert(IsAlive);
+	}
 
 	if (IsServer){
 		foreach(InternetAddress a; Clients.values)
@@ -144,7 +155,8 @@ public void dnet_shutdown(){
   Success of creating. If true, server is up and listening. If false, error occured. Maybe port is in use?
 */
 public bool dnet_server_create(char[] address, ushort port){
-	writefln("dnet server create");
+	debug
+		writefln("dnet server create");
 	try {
 		InternetAddress a = new InternetAddress(address, 3333);
 		Socket.bind(a);
@@ -164,11 +176,12 @@ public bool dnet_server_create(char[] address, ushort port){
   Array of all connected clients.
 */
 public InternetAddress[] dnet_server_get_clients(){
-	writefln("dnet server get clients");
-
-	assert(Socket != null);
-	assert(IsServer);
-	assert(IsAlive);
+	debug {
+		writefln("dnet server get clients");
+		assert(Socket != null);
+		assert(IsServer);
+		assert(IsAlive);
+	}
 
 	return Clients.values;
 }
@@ -177,11 +190,12 @@ public InternetAddress[] dnet_server_get_clients(){
  Sends data to connected client.
 */
 public void dnet_server_send(ubyte[] data, InternetAddress client){
-	writefln("dnet server send");
-
-	assert(Socket != null);
-	assert(IsServer);
-	assert(IsAlive);
+	debug {
+		writefln("dnet server send");
+		assert(Socket != null);
+		assert(IsServer);
+		assert(IsAlive);
+	}
 
 	ubyte[] buff = [PacketType.RECEIVE];
 	Socket.sendTo(buff ~ data, client);
@@ -191,11 +205,12 @@ public void dnet_server_send(ubyte[] data, InternetAddress client){
  Disconnects client.
 */
 public void dnet_server_disconnect(InternetAddress client){
-	writefln("dnet server disconnect");
-
-	assert(Socket != null);
-	assert(IsServer);
-	assert(IsAlive);
+	debug {
+		writefln("dnet server disconnect");
+		assert(Socket != null);
+		assert(IsServer);
+		assert(IsAlive);
+	}
 
 	//Socket.sendTo(cast(void[])[PacketType.DISCONNECT], client);
 	OnDisconnect(client);
@@ -208,7 +223,8 @@ public void dnet_server_disconnect(InternetAddress client){
   Success of creating resourcess to server. If false then no resourcess could be established. $(RED True does not mean connection is accepted!) For that you will have to look for $(I on connect) event.
 */
 public bool dnet_client_connect(char[] address, ushort port){
-	writefln("dnet client connect");
+	debug
+		writefln("dnet client connect");
 	IsServer = false;
 	IsAlive = true;
 	Server = new InternetAddress(address, port);
@@ -223,10 +239,12 @@ public bool dnet_client_connect(char[] address, ushort port){
  Sends data to connected server.
 */
 public void dnet_client_send(ubyte[] data){
-	writefln("dnet client send");
-	assert(Socket != null);
-	assert(!IsServer);
-	assert(IsAlive);
+	debug {
+		writefln("dnet client send");
+		assert(Socket != null);
+		assert(!IsServer);
+		assert(IsAlive);
+	}
 	ubyte[] buff = [PacketType.RECEIVE] ;
 	Socket.sendTo(buff ~ data, Server);
 }
@@ -234,7 +252,7 @@ public void dnet_client_send(ubyte[] data){
 
 
 private int dnet_listening_func(void* unused){
-	writefln("dnet listening thread initialized");
+	debug writefln("dnet listening thread initialized");
 	assert(Socket != null);
 
 	Address address;
@@ -245,7 +263,7 @@ private int dnet_listening_func(void* unused){
 	while (IsAlive){
 		size = Socket.receiveFrom(buff, address);
 		if (size > 0){
-			writefln("dnet packet received");
+			debug writefln("dnet packet received");
 			data = buff[1..size].dup;
 
 			switch (buff[0]){
@@ -277,7 +295,7 @@ private int dnet_listening_func(void* unused){
 		}
 	}
 
-	writefln("dnet terminating listening thread");
+	debug writefln("dnet terminating listening thread");
 	return 0;
 }
 
