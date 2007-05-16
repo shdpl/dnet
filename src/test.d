@@ -1,21 +1,21 @@
 private import std.stdio;
-private import std.socket;
+private import std.string;
 
 version(Windows)
 	pragma(lib, "ws2_32.lib");
 
 /**
- Auto resizeable FIFO queue that holds char[]
+ Auto resizeable FIFO container that stores char[] type.
  Overflow shouldn't happen becouse capacity will grow. 
  Underflow is handled by returning empty string.
  Capacity will not shrink or data cleanedup ever ever :)
 */
-class FifoQueue {
-	uint Capacity;
-	char[][] Buff;
-	uint First;
-	uint Last;
-	uint Length;
+public class FifoQueue {
+	private uint Capacity;
+	private char[][] Buff;
+	private uint First;
+	private uint Last;
+	private uint Length;
 
 	this(){
 		First = 0;
@@ -25,7 +25,7 @@ class FifoQueue {
 		Buff.length = Capacity;
 	}
 
-	void put(char[] data){
+	public void put(char[] data){
 		if (Length == Capacity){
 			Capacity *= 2;
 			Buff.length = Capacity;
@@ -39,7 +39,7 @@ class FifoQueue {
 		else
 			Last++;
 	}
-	char[] get(){
+	public char[] get(){
 		char[] s = ""; // we handle underflows by returning empty string
 		if (Length > 0){
 			Length--;
@@ -52,12 +52,16 @@ class FifoQueue {
 		}
 		return s;
 	}
-	uint length(){
+	public uint length(){
 		return Length;
 	}
 
-	uint capacity(){
+	public uint capacity(){
 		return Capacity;
+	}
+
+	public char[] toString(){
+		return format("<FifoQueue - capacity %d length %d first %d last %d>", Capacity, Length, First, Last);
 	}
 
 	unittest {
@@ -80,128 +84,105 @@ class FifoQueue {
                 }
 		writefln("FifoQueue unitest PASS");
 	}
+
 }
 
 
 
 
 const char UNRELIABLE = 255;
-const char STATUS_REQUEST = 254;
-const char STATUS_REPORT = 253;
-const char GOT_ALL = 252;
+const char GOTO = 254;
+const char FINISHED = 253;
 
 /*
- A tunnel to other side defined by address.
- All packets send there are guaranteeded to get there and in order if set so.
- It is not job for this class to know is otherside alive or not.
- And as it is UDP protocol, it don't know anything about connecting/disconnecting 
- and will hang forever waiting for reply if other end is down.
+ A tunnel to other virtual side.
+ Tunnel takes care of packets to send and their order.
 
- This class is not thread related. 
- It is required to call sync method in a loop for it to be able to send & receive data.
+ This class is not sockets or thread related. It doesn't binds, sends or receives any network data.
+ It stores and tracks what data is in and next out.
 */
-class PeerTunnel {
-	Address RemoteHost;
-	UdpSocket Socket;
-	FifoQueue Received;
-	FifoQueue Pending;
+class PeerQueue {
+	FifoQueue Received; // incoming
+	FifoQueue Reliable; // outgoing
+	FifoQueue Unreliable; // outgoing
 
 	char RecvId = 0;
 	char SendId = 0;
 	char[][250] SendBuff;
 
 	/**
-	 Initializes class and points it to other end.
 	*/
-	this(ushort listen_port, char[] remote_host, ushort remote_port){
-		RemoteHost = new InternetAddress(remote_host, remote_port);
-	        Socket = new UdpSocket(AddressFamily.INET);
-		Socket.bind(new InternetAddress(listen_port));
-		Socket.blocking(true);
-
+	this(){
 		Received = new FifoQueue();
-		Pending = new FifoQueue();
+		Reliable = new FifoQueue();
+		Unreliable = new FifoQueue();
 	}
 
 	/**
 	 Sends data to other end. 
-         All reliable packets are guaranteded to get in order 
-         and on target if other end is alive.
-	 All unreliable packets are sent immediatelly, 
-         while reliable are stored in queue and sent on next sync() call.
 	*/
-	void send(char[] data, bool reliable){
+	void put(char[] data, bool reliable){
 		if (reliable)
-			Pending.put(data);
+			Reliable.put(data);
 		else
-			Socket.sendTo(data, RemoteHost);
+			Unreliable.put([UNRELIABLE] ~data);
 	}
 
 	/**
-         Reads cached data received from other end. 
-         Repeat this function to get all stored packets.
+         Reads data received from other end. 
          When there are no more left empty string is returned.
         */
-	char[] receive(){
+	char[] get(){
 		return Received.get();
 	}
 
 	/**
-	 Sends all packets waiting in pending queue and receives incomming packets.
+	 Feeds incoming UDP packet addressed to this end of peer.
 	*/
-	void sync(){
-		// first, receive procedure
-		char[1024] buff;
-		int size;
-		while (true){
-			size = Socket.receiveFrom(buff, RemoteHost);
-			if (size <= 0)
+	void packetPut(char[] data){
+
+		switch (data[0]) {
+			case UNRELIABLE: // unreliable packet received
+				Received.put(data[1..length].dup);
 				break;
 
-			writefln(cast(ubyte[])buff[0..size]);
+			case FINISHED: // other side got all 250 packets in a batch, reset send buffer and start from packet id 0
+				for (int i=0; i < SendBuff.length; i++)
+					SendBuff[i] = "";
+				SendId = 0;
+				break;
 
-			switch (buff[0]) {
-				case UNRELIABLE: // unreliable packet received
-					Received.put(buff[1..size].dup);
-					break;
+			case GOTO: // other side tells us to restart transmission from this packet id becouse some packets got lost
+				SendId = data[1];
+				break;
 
-				case STATUS_REQUEST: // status request, we send back last send id
-					Socket.sendTo(cast(void[])([STATUS_REPORT] ~ [SendId]), SocketFlags.NONE, RemoteHost);
-					break;
-				case GOT_ALL: // other side got all 250 packets in a batch, reset send buffer
-					for (int i=0; i < SendBuff.length; i++)
-						SendBuff[i] = "";
-					SendId = 0;
-                                        break;
+			default: // here we handle regular packets
+				char next_packet_id = RecvId == 249 ? 0 : RecvId + 1;
+				char last_packet_id = RecvId == 0 ? 249 : RecvId - 1;
 
-				case STATUS_REPORT: // other side tells us wich packet is expecting next
-					SendId = buff[1];
-					break;
+				if (data[0] == RecvId){
+					Received.put(data[1..length].dup);
+					if (RecvId == 249)
+						Unreliable.put(cast(char[])([FINISHED] ~ []));
+                        	        RecvId = next_packet_id;
+				}
+				else if (data[0] == last_packet_id){
+					// allready got this packet, ignore it
+				}
+				else {
+					// by here now, we must have got unordered packet 
+					// So we must notify other side which packet are we expecting
+					Unreliable.put(cast(char[])([GOTO] ~ [RecvId]));
+				}
 
-				default: // here we handle regular packets
-					char next_packet_id = RecvId == 249 ? 0 : RecvId + 1;
-					if (buff[0] == next_packet_id){
-						Received.put(buff[1..size].dup);
+		}				
+	}
 
-						if (RecvId == 249)
-							Socket.sendTo(cast(void[])([GOT_ALL] ~ []), SocketFlags.NONE, RemoteHost);
-
-
-	                        	        RecvId = next_packet_id;
-					}
-					else if (buff[0] == RecvId){
-						// allready got this packet, ignore it
-					}
-					else {
-						// by here now, we must have got unordered packet 
-						// So we must notify other side which packet are we expecting
-						Socket.sendTo(cast(void[])([STATUS_REPORT] ~ [next_packet_id]), SocketFlags.NONE, RemoteHost);
-
-					}
-
-			}				
-		}
-
+	/**
+	 Returns raw data for next packet to transmit to other side.
+	 If there are no packets waiting then empty string.
+	*/
+	public char[] packetGet(){
 		// now sending procedures
 		// procedure is - packets are sent from id's 0 - 249
 		// packet 249 is repeatedly sent untill there is GOT_ALL from other end
@@ -210,33 +191,99 @@ class PeerTunnel {
 
 		// first we store data we want to send in SendBuff if it is not present
 		if (SendId < 250 && SendBuff[SendId].length == 0){
-			char[] tmp = Pending.get();
-			if (tmp.length > 0)
-				SendBuff[SendId] = tmp;
+			if (Reliable.length > 0)
+				SendBuff[SendId] = Reliable.get();
 		}
 
-		// if there is data for sending, send it
-		if (SendBuff[SendId].length > 0)
-			Socket.sendTo(cast(void[])([SendId] ~ SendBuff[SendId]), SocketFlags.NONE, RemoteHost);
+		char[] s = "";
+		if (Unreliable.length > 0) // send unreliable data
+			s = Unreliable.get();
+		else if (SendBuff[SendId].length > 0 && SendId <= 249) {// if there is reliable data for sending, send it
+			s = cast(char[])([SendId] ~ SendBuff[SendId]); // note for ++
+			if (SendId < 249)
+				SendId++;
+		}
+		return s;
 
 	}
+
+	/**
+	 Use for quick debug description of object.
+	*/
+	public char[] toString(){
+		return format("<PeerQueue - RecvId %d SendId %d Received %d Reliable %d Unreliable %d>", 
+			RecvId, SendId, Received.length, Reliable.length, Unreliable.length
+		);
+	}
+
+	unittest {
+
+		PeerQueue q = new PeerQueue();
+		// new empty queue, no data to read or send or anything
+		assert(q.get() == "");
+		assert(q.packetGet() == "");
+
+		// unreliable sending
+		q.put("abc", false);
+		q.put("def", false);
+		assert(q.packetGet() == [UNRELIABLE] ~"abc");
+		assert(q.packetGet() == [UNRELIABLE] ~"def");
+		assert(q.packetGet() == "");
+
+		// reliable sending
+		q.put("efg", true);
+		q.put("ddd", true);
+		assert(q.packetGet() == "\x00efg");
+		assert(q.packetGet() == "\x01ddd");
+		q.put("eee", true);
+		assert(q.packetGet() == "\x02eee");
+		assert(q.packetGet() == "");
+
+		// test does SendId increments only to 249 then goes back to 0
+		for (int i=3; i<250; i++){
+			q.put(format("x%d", i), true);
+			assert(q.packetGet() == cast(char[])[i] ~ format("x%d", i));
+		}
+
+		// test if packet id 249 will be transmitted repetaedly utill there is reply with GOT_ALL
+		q.put("efg", true);
+		q.put("xcf", true);
+		assert(q.packetGet() == cast(char[])[249] ~ format("x%d", 249));
+		q.packetPut(cast(char[])[FINISHED]);
+		assert(q.packetGet() == "\x00efg");
+		assert(q.packetGet() == "\x01xcf");
+
+		// simulate other side didnt get some packets and now is asking to retransmit
+		q.packetPut(cast(char[])[GOTO, 0] );
+		assert(q.packetGet() == "\x00efg");
+		assert(q.packetGet() == "\x01xcf");
+
+		// simulate we get packets in order
+		assert(q.packetGet() == "");
+		q.packetPut("\x00a" );
+		q.packetPut("\x01b" );
+		q.packetPut("\x02c" );
+		assert(q.get() == "a");
+		assert(q.get() == "b");
+		assert(q.get() == "c");
+		assert(q.get() == "");
+		assert(q.packetGet() == "");
+
+		// simulate we didn get packet id 4. we expect to send back 2 GOTO packets, one for each of 2 we got affter missing one
+		q.packetPut("\x03d" );
+		q.packetPut("\x05e" );
+		q.packetPut("\x06f" );
+		assert(q.packetGet() == cast(char[])[GOTO, 4]);
+		assert(q.packetGet() == cast(char[])[GOTO, 4]);
+		assert(q.packetGet() == "");
+		writefln("PeerQueue unitest PASS");
+	}
+
 }
 
 import std.c.time;
 
 int main(){
-	PeerTunnel t = new PeerTunnel(3333, "localhost", 3333);
-	char[] buff;
-	while(1){
-		t.send("bane", false);
-		do {
-			buff = t.receive();
-			if (buff.length > 0)
-				writefln("got %s", buff);
-		} while (buff.length > 0);
-		t.sync();
-		usleep(1000*10);
-	}
 
 	return 0;
 }
