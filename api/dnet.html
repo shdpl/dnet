@@ -10,6 +10,11 @@
 - timeout detection when no traffic (pinging thread?)
 <br><br>
 
+-replace all ubyte with char (char is unsigned byte, no need for ubyte)
+-wrap all asserts in debug blocks. when compiled with -release asserts are not removed, but program exists withouth any message
+
+<br><br>
+
 <dl><dt><big>bool <u>dnet_on_connect</u>(InternetAddress <i>address</i>);
 </big></dt>
 <dd>Built in handler.
