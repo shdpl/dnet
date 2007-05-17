@@ -93,12 +93,14 @@ public class FifoQueue {
 const char UNRELIABLE = 255;
 const char GOTO = 254;
 const char FINISHED = 253;
+const char IGNORE = 252;
 
 /*
  A tunnel to other virtual side.
  Tunnel takes care of packets to send and their order.
 
- This class is not sockets or thread related. It doesn't binds, sends or receives any network data.
+ This class is not sockets or thread related. 
+ It doesn't binds, sends or receives any network data.
  It stores and tracks what data is in and next out.
 */
 class PeerQueue {
@@ -154,6 +156,9 @@ class PeerQueue {
 
 			case GOTO: // other side tells us to restart transmission from this packet id becouse some packets got lost
 				SendId = data[1];
+				break;
+
+			case IGNORE: // we do just that, ignore the packet
 				break;
 
 			default: // here we handle regular packets
@@ -424,6 +429,7 @@ public class DnetClient {
 
 	int listener(){
 		writefln("listener thread initialized");
+		//long last_recv = getUTCtime();
                 Address address;
                 int size;
                 char[1024] buff;
@@ -432,6 +438,11 @@ public class DnetClient {
 			// receive packets only coming from server host and store them in peer
 			// if it is first packet received from server then call onConnect
                         if (size > 0 && address.toString() == Host.toString()){
+				// trying to implement disconnect event 
+				//if ((getUTCtime() - last_recv)/TicksPerSecond > 1)
+				//	Peer.put(cast(char[])[IGNORE], false);
+				//last_recv = getUTCtime();
+
 				writefln("client get packet %s", cast(ubyte[])buff[0..size]);
                                 if (IsConnected == false){
 					IsConnected = true;
