@@ -8,7 +8,7 @@ version(Windows)
  Auto resizeable FIFO container that stores char[] type.
  Overflow shouldn't happen becouse capacity will grow. 
  Underflow is handled by returning empty string.
- Capacity will not shrink or data cleanedup ever ever :)
+ Capacity can only grow and unused data is overwritten, not cleaned up.
 */
 public class FifoQueue {
 	private uint Capacity;
@@ -218,8 +218,8 @@ class PeerQueue {
 
 	unittest {
 
-		PeerQueue q = new PeerQueue();
 		// new empty queue, no data to read or send or anything
+		PeerQueue q = new PeerQueue();
 		assert(q.get() == "");
 		assert(q.packetGet() == "");
 
@@ -244,8 +244,10 @@ class PeerQueue {
 			q.put(format("x%d", i), true);
 			assert(q.packetGet() == cast(char[])[i] ~ format("x%d", i));
 		}
+		assert(q.packetGet() == cast(char[])[249] ~ format("x%d", 249));
+		assert(q.packetGet() == cast(char[])[249] ~ format("x%d", 249));
 
-		// test if packet id 249 will be transmitted repetaedly utill there is reply with GOT_ALL
+		// test if packet id 249 will be transmitted repetaedly utill there is reply with FINISHED
 		q.put("efg", true);
 		q.put("xcf", true);
 		assert(q.packetGet() == cast(char[])[249] ~ format("x%d", 249));
@@ -276,6 +278,7 @@ class PeerQueue {
 		assert(q.packetGet() == cast(char[])[GOTO, 4]);
 		assert(q.packetGet() == cast(char[])[GOTO, 4]);
 		assert(q.packetGet() == "");
+
 		writefln("PeerQueue unitest PASS");
 	}
 
@@ -283,11 +286,193 @@ class PeerQueue {
 
 import std.c.time;
 
-int main(){
+import std.thread;
+import std.socket;
+version(Windows) 
+	pragma(lib, "ws2_32.lib");
 
-	return 0;
+class DnetServer {
+
+	UdpSocket Socket;
+	bool IsListening;
+	PeerQueue[char[]] ClientsPeer;
+	Address[char[]] ClientsAddress;
+	Thread Listener;
+	Thread Watcher;
+
+	this(ushort port){
+		Socket = new UdpSocket(AddressFamily.INET);
+		Socket.bind(new InternetAddress(3333));
+		IsListening = true;
+		assert(Socket != null);
+		assert(Socket.isAlive());
+	}
+
+	bool start(){
+		Listener = new Thread(&listener);
+		Listener.start();
+		Watcher = new Thread(&watcher);
+		Watcher.start();
+		return true;
+	}
+
+	int listener(){
+		//writefln("listening thread initialized");
+		Address address;
+		int size;
+		char[1024] buff;
+		while (IsListening){
+			//writefln("listening");
+
+			size = Socket.receiveFrom(buff, address);
+			if (size > 0){
+				if ((address.toString() in ClientsPeer) == null){
+					if (onConnect(address)){
+						ClientsPeer[address.toString()] = new PeerQueue();
+						ClientsAddress[address.toString()] = address;
+					}
+				}
+				if ((address.toString() in ClientsPeer) != null)
+					ClientsPeer[address.toString()].packetPut(buff[0..size]);
+			}
+		}
+		//writefln("terminating listening thread");
+		return 0;
+	}
+
+	int watcher(){
+		//writefln("watcher thread initialized");
+		char[] buff;
+		while (IsListening){
+			foreach(char[] client, PeerQueue peer; ClientsPeer){
+				buff = peer.get();
+				while (buff.length > 0){
+					onReceive(ClientsAddress[client], buff);
+					buff = peer.get();
+				}
+			}
+			usleep(5*1024);
+		}
+		return 0;
+	}
+
+	bool onConnect(Address client){
+		writefln("Connected from %s", client.toString());
+		return true;
+	}
+
+	void onDisconnect(Address client){
+		writefln("Disconnected from %s", client.toString());
+	}
+
+	void onReceive(Address client, char[] data){
+		writefln("Packet from %s, data %s", client.toString(), data);
+	}
+
+	bool listening(){
+		return true;
+	}
+
+	Address[] clients(){
+		return ClientsAddress.values;
+	}
+
+	void send(Address client, char[] data, bool reliable){
+	}
+
+	void broadcast(char[] data, bool reliable){
+	}
+
 }
 
+
+public class DnetClient {
+
+	UdpSocket Socket;
+	Address Host;
+	PeerQueue Peer;
+	bool IsConnected;
+	Thread Listener;
+	Thread Watcher;
+
+
+	this(char[] address, ushort port){
+		Peer = new PeerQueue();
+		Socket = new UdpSocket(AddressFamily.INET);
+		Host = new InternetAddress(address, port);
+		IsConnected = true;
+		assert(Socket != null);
+		assert(Socket.isAlive());
+		Listener = new Thread(&listener);
+		Listener.start();
+		Watcher = new Thread(&watcher);
+		Watcher.start();
+	}
+
+	int listener(){
+		writefln("listening thread initialized");
+		Address address;
+		int size;
+		char[1024] buff;
+		char[] data;
+
+		while (IsConnected){
+			size = Socket.receiveFrom(buff, address);
+			if (size > 0){
+				writefln("packet received");
+				data = buff[1..size].dup;
+			}
+		}
+		writefln("terminating listening thread");
+		return 0;
+	}
+
+	int watcher(){
+		writefln("sending thread initialized");
+		char[] buff;
+		while(IsConnected){
+			buff = Peer.packetGet();
+			if (buff.length > 0){
+				writefln("socket send");
+				Socket.sendTo(buff, Host);
+			}
+			usleep(1024*5);
+		}
+		return 0;
+	}
+
+
+	void onConnect(char[] data){
+		writefln("on connect");
+	}
+
+	void onDisconnect(char[] data){
+		writefln("on disconnect");
+	}
+
+	void onReceive(char[] data){
+		writefln("on receive");
+	}
+
+	bool connected(){
+		return true;
+	}
+
+	void send(char[] data, bool reliable){
+		writefln("send");
+		Peer.put(data, reliable);
+	}
+}
+
+
+/*
+int main(){
+	DNetServer s = new DNetServer("", 3333);
+	s.start();
+	usleep(1024*1024*100);
+	return 0;
+}
+*/
 /*
 char[][uint][]
 
