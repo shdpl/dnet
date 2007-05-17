@@ -3,7 +3,7 @@ import std.c.time;
 
 int main() {
 
-	DnetClient c = new DnetClient("127.0.0.1", 3333);
+	DnetClient c = new DnetClient("localhost", 3333);
 	c.send("Hello world!", true);
 	c.send("Here I am again....", false);
 	c.send("Are you there....?", true);

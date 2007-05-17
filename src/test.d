@@ -291,10 +291,14 @@ import std.socket;
 version(Windows) 
 	pragma(lib, "ws2_32.lib");
 
+
+/**
+TODO - detecting disconnect. also, when client disconnects his peer must be removed.
+*/
 class DnetServer {
 
 	UdpSocket Socket;
-	bool IsListening;
+	bool IsAlive;
 	PeerQueue[char[]] ClientsPeer;
 	Address[char[]] ClientsAddress;
 	Thread Listener;
@@ -303,27 +307,21 @@ class DnetServer {
 	this(ushort port){
 		Socket = new UdpSocket(AddressFamily.INET);
 		Socket.bind(new InternetAddress(3333));
-		IsListening = true;
+		IsAlive = true;
 		assert(Socket != null);
 		assert(Socket.isAlive());
-	}
-
-	bool start(){
 		Listener = new Thread(&listener);
 		Listener.start();
 		Watcher = new Thread(&watcher);
 		Watcher.start();
-		return true;
 	}
 
 	int listener(){
-		//writefln("listening thread initialized");
 		Address address;
 		int size;
 		char[1024] buff;
-		while (IsListening){
-			//writefln("listening");
-
+		while (IsAlive){
+			// store incoming packets into peer
 			size = Socket.receiveFrom(buff, address);
 			if (size > 0){
 				if ((address.toString() in ClientsPeer) == null){
@@ -336,22 +334,28 @@ class DnetServer {
 					ClientsPeer[address.toString()].packetPut(buff[0..size]);
 			}
 		}
-		//writefln("terminating listening thread");
 		return 0;
 	}
 
 	int watcher(){
-		//writefln("watcher thread initialized");
 		char[] buff;
-		while (IsListening){
+		while (IsAlive){
 			foreach(char[] client, PeerQueue peer; ClientsPeer){
+				// forward stored incoming packets to onReceive handler
 				buff = peer.get();
 				while (buff.length > 0){
 					onReceive(ClientsAddress[client], buff);
 					buff = peer.get();
 				}
+				// send raw packets stored for sending
+				buff = peer.packetGet();
+				while (buff.length > 0){
+					writefln("server sends raw %s", cast(ubyte[])buff);
+					Socket.sendTo(buff, ClientsAddress[client]);
+					buff = peer.packetGet();
+				}
 			}
-			usleep(5*1024);
+			usleep(1000);
 		}
 		return 0;
 	}
@@ -378,9 +382,16 @@ class DnetServer {
 	}
 
 	void send(Address client, char[] data, bool reliable){
+		if ((client.toString() in ClientsAddress) != null)
+			ClientsPeer[client.toString()].put(data, reliable);
 	}
 
 	void broadcast(char[] data, bool reliable){
+		writefln("broadcast");
+		foreach(char[] client, PeerQueue peer; ClientsPeer){
+			writefln("broadcast to %s data %s", client, data);
+			peer.put(data, reliable);
+		}
 	}
 
 }
@@ -392,6 +403,7 @@ public class DnetClient {
 	Address Host;
 	PeerQueue Peer;
 	bool IsConnected;
+	bool IsAlive;
 	Thread Listener;
 	Thread Watcher;
 
@@ -400,7 +412,8 @@ public class DnetClient {
 		Peer = new PeerQueue();
 		Socket = new UdpSocket(AddressFamily.INET);
 		Host = new InternetAddress(address, port);
-		IsConnected = true;
+		IsConnected = false;
+		IsAlive = true;
 		assert(Socket != null);
 		assert(Socket.isAlive());
 		Listener = new Thread(&listener);
@@ -410,120 +423,67 @@ public class DnetClient {
 	}
 
 	int listener(){
-		writefln("listening thread initialized");
-		Address address;
-		int size;
-		char[1024] buff;
-		char[] data;
-
-		while (IsConnected){
-			size = Socket.receiveFrom(buff, address);
-			if (size > 0){
-				writefln("packet received");
-				data = buff[1..size].dup;
-			}
-		}
-		writefln("terminating listening thread");
-		return 0;
+		writefln("listener thread initialized");
+                Address address;
+                int size;
+                char[1024] buff;
+                while (IsAlive){
+                        size = Socket.receiveFrom(buff, address);
+			// receive packets only coming from server host and store them in peer
+			// if it is first packet received from server then call onConnect
+                        if (size > 0 && address.toString() == Host.toString()){
+				writefln("client get packet %s", cast(ubyte[])buff[0..size]);
+                                if (IsConnected == false){
+					IsConnected = true;
+                                        onConnect();
+				}
+                                Peer.packetPut(buff[0..size]);
+                        }
+                }
+                return 0;
 	}
 
 	int watcher(){
-		writefln("sending thread initialized");
+		writefln("watcher thread initialized");
 		char[] buff;
-		while(IsConnected){
-			buff = Peer.packetGet();
-			if (buff.length > 0){
-				writefln("socket send");
-				Socket.sendTo(buff, Host);
+		while(IsAlive){
+			// forward stored incoming packets to onReceive handler
+			buff = Peer.get();
+			while (buff.length > 0){
+				onReceive(buff);
+				buff = Peer.get();
 			}
-			usleep(1024*5);
+			// send raw packets stored for sending
+			buff = Peer.packetGet();
+			while (buff.length > 0){
+				Socket.sendTo(buff, Host);
+				buff = Peer.packetGet();
+			}
+			usleep(1000);
 		}
 		return 0;
 	}
 
 
-	void onConnect(char[] data){
+	void onConnect(){
 		writefln("on connect");
 	}
 
-	void onDisconnect(char[] data){
+	void onDisconnect(){
 		writefln("on disconnect");
 	}
 
 	void onReceive(char[] data){
-		writefln("on receive");
+		writefln("on receive data %s", data);
 	}
 
 	bool connected(){
-		return true;
+		return IsConnected;
 	}
 
 	void send(char[] data, bool reliable){
-		writefln("send");
+		//writefln("send");
 		Peer.put(data, reliable);
 	}
 }
 
-
-/*
-int main(){
-	DNetServer s = new DNetServer("", 3333);
-	s.start();
-	usleep(1024*1024*100);
-	return 0;
-}
-*/
-/*
-char[][uint][]
-
-1int peer_listening_func(void* unused){
-	// getpacket
-	if packet_id == UNRELIABLE
-		call_receive func, packet is unreliable
-	else if packt_id = expected packet id
-		inc counter, display packet
-	else if packet_id <> expected packet id
-		ignore packet & send back GOTO packet 
-
-	else if packet_id == GOTO packet
-		ignore packet & move counter on that peer on requested packet id
-
-	else if packet_id == STATUS
-		ignore & send back STATUS with id of last packet received
-	
-		
-
-	return 0;
-}
-
-
-
-void dnet_peer_send(InternetAddress, bool reliable, char[] data){
-	if (reliable)
-		// append to buffer
-	else
-		// send immediatly, packet_id = UNRELIABLE
-}
-
-
-
-/*
-unreliable are sent immediatelly
-
-Sending buffer (must keep much more than 255 packets for send)
-char[][uint][address]
-
-last_recv (0-254) - packets with id 255 are unreliable and will allways be accepted
-char[address]
-
-STATUS - "hey, send me back id of last packet you got from me"
-STATUS char - "hey, this is id of last packet I got from you"
-GOTO char - "yo man, I need you to send me packets starting with this id (I didn't get them or whatever)"
-
-tunnel.send(address, mode, data)
-tunnel.get(address, mode, data)
-tunnel.listener(); // thread
-tunnel.sender(); // thread
-
-tunnel_got
-*/
