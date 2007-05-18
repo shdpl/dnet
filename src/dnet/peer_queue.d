@@ -1,3 +1,16 @@
+/*
+
+Copyright (c) 2007 Bane <bane@3dnet.co.yu>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+*/
+
+
 module dnet.peer_queue;
 
 import std.stdio;
@@ -5,22 +18,23 @@ import std.string;
 import dnet.fifo_queue;
 
 
-const char UNRELIABLE = 255;
-const char GOTO = 254;
-const char FINISHED = 253;
-const char IGNORE = 252;
+protected const char UNRELIABLE = 255;
+protected const char GOTO = 254;
+protected const char FINISHED = 253;
+protected const char IGNORE = 252;
 
-/*
- A tunnel to other virtual side.
- Tunnel takes care of packets to send and their order.
+/**
+ Utility used to translate data you want to send into raw UDP packets & decrypts received UDP packets to data you can read.
+ It takes care of packet reliability and ordered sending.
 
  This class is not sockets or thread related. 
  It doesn't binds, sends or receives any network data.
- It stores and tracks what data is in and next out.
+ It only manipulates char arrays.
 
- Toward perfection: split larger data to chuns and send in separate packets?
+ TODO:
+  split larger data to chunks and send in separate packets, limit packet size
 */
-class PeerQueue {
+public class PeerQueue {
 	FifoQueue Received; // incoming
 	FifoQueue Reliable; // outgoing
 	FifoQueue Unreliable; // outgoing
@@ -29,8 +43,6 @@ class PeerQueue {
 	char SendId = 0;
 	char[][250] SendBuff;
 
-	/**
-	*/
 	this(){
 		Received = new FifoQueue();
 		Reliable = new FifoQueue();
@@ -38,9 +50,14 @@ class PeerQueue {
 	}
 
 	/**
-	 Sends data to other end. 
+	 Writes data packet you want to send to other end. 
+	Packet can be reliable if you want, meaning it will get there and in same order you send it.
+	If not, it might get on destination, might not, or in unknown order.
 	*/
-	void put(char[] data, bool reliable){
+	public void put(char[] data, bool reliable){
+		if (data.length <=0)
+			return;
+
 		if (reliable)
 			Reliable.put(data);
 		else
@@ -48,17 +65,20 @@ class PeerQueue {
 	}
 
 	/**
-         Reads data received from other end. 
-         When there are no more left empty string is returned.
+        Reads data packet in same order as received from other end. 
+        When there are no more left empty string is returned.
         */
-	char[] get(){
+	public char[] get(){
 		return Received.get();
 	}
 
 	/**
-	 Feeds incoming UDP packet addressed to this end of peer.
+	Decodes recieved raw UDP packet addressed to this end of peer.
+	It translates it to data you can read with get() method.
 	*/
-	void packetPut(char[] data){
+	public void packetPut(char[] data){
+		if (data.length <= 0)
+			return;
 
 		switch (data[0]) {
 			case UNRELIABLE: // unreliable packet received
@@ -101,14 +121,13 @@ class PeerQueue {
 	}
 
 	/**
-	 Returns raw data for next packet to transmit to other side.
-	 If there are no packets waiting then empty string.
+	Returns raw UDP packet ready for you to transmit it to other end.
+	This packet is encrypted data you have written with put() method.
 	*/
-	public char[] packetGet(){
+	public public char[] packetGet(){
 		// now sending procedures
 		// procedure is - packets are sent from id's 0 - 249
-		// packet 249 is repeatedly sent untill there is GOT_ALL from other end
-		// with id = 0
+		// packet 249 is repeatedly sent untill there is FINISHED from other end
 		// that means other side got all 250 packets so we can reset SendBuff
 
 		// first we store data we want to send in SendBuff if it is not present
@@ -130,7 +149,7 @@ class PeerQueue {
 	}
 
 	/**
-	 Use for quick debug description of object.
+	 Use for quick debug description of object (packet id's, number of packets received, waiting etc.).
 	*/
 	public char[] toString(){
 		return format("<PeerQueue - RecvId %d SendId %d Received %d Reliable %d Unreliable %d>", 

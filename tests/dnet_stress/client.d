@@ -3,12 +3,25 @@ import std.c.time;
 import std.stdio;
 import std.date;
 
-class MyClient : DnetClient {
+/**
+Use reliable sending?
+Experiment with this to get some interesting performance results.
+*/
+const bool RELIABLE = false;
+
+
+/**
+This slass should be able to count incoming packets/bytes per second and write it to stdout.
+*/
+public class MyClient : DnetClient {
 
 	long start = 0;
 	int packets = 0;
 	int bytes = 0;
 
+	/**
+	Built in method we overriden.
+	*/
 	public void onReceive(char[] data){
 		if (start == 0)
 			start = getUTCtime();
@@ -18,7 +31,7 @@ class MyClient : DnetClient {
 			bytes += data.length;
 		}
 		else
-			writefln("Unknown packet");
+			writefln("Unknown packet %s", cast(ubyte[])data);
 
 
 		if ((getUTCtime - start) / TicksPerSecond >= 1){
@@ -37,7 +50,7 @@ int main() {
 	MyClient c = new MyClient();
 	c.connect("localhost", 3333);
 	while(true){
-		c.send("Hello world! Let's flood you!", true);
+		c.send("Hello world! Let's flood you!", RELIABLE);
 		usleep(1000);
 	}
 	return 0;

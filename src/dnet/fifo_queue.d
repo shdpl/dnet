@@ -1,15 +1,30 @@
+/*
+
+Copyright (c) 2007 Bane <bane@3dnet.co.yu>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+*/
+
+
 module dnet.fifo_queue;
 
 private import std.stdio;
 private import std.string;
 
 /**
- Auto resizeable FIFO container that stores char[] type.
+ Auto resizeable FIFO (First In First Out) container that stores char[] type.
  Overflow shouldn't happen becouse capacity will grow. 
  Underflow is handled by returning empty string.
  Capacity can only grow and unused data is overwritten, not cleaned up.
 
- Toward perfection: if canister could shrink capacity if not needed anymore and to be able to free memory from unused indexes.
+ TODO:
+  if canister could shrink unneededcapacity , 
+  free unused indexes to reduce memory load
 */
 public class FifoQueue {
 	private uint Capacity;
@@ -26,6 +41,9 @@ public class FifoQueue {
 		Buff.length = Capacity;
 	}
 
+	/**
+	Stores string.
+	*/
 	public void put(char[] data){
 		if (Length == Capacity){
 			Capacity *= 2;
@@ -40,6 +58,10 @@ public class FifoQueue {
 		else
 			Last++;
 	}
+
+	/**
+	Gets string. If no more left, return empty string.
+	*/
 	public char[] get(){
 		char[] s = ""; // we handle underflows by returning empty string
 		if (Length > 0){
@@ -53,14 +75,26 @@ public class FifoQueue {
 		}
 		return s;
 	}
+
+	/**
+	Number of stored strings at the moment (number of get() methods you can perform).
+	*/
 	public uint length(){
 		return Length;
 	}
 
+	/**
+	Max number of strings canister can store at the moment. 
+	It will grow automatically if space is needed.
+	Starting capacity is 16 and grows by factor 2 (doubles).
+	*/
 	public uint capacity(){
 		return Capacity;
 	}
 
+	/**
+	Returns convenient debug message describing object (capacity, length, position of indexes etc.).
+	*/
 	public char[] toString(){
 		return format("<FifoQueue - capacity %d length %d first %d last %d>", Capacity, Length, First, Last);
 	}
