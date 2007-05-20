@@ -8,7 +8,7 @@ import std.c.time;
 Use reliable sending?
 Experiment with this to get some interesting performance results.
 */
-const bool RELIABLE = false;
+const bool RELIABLE = true;
 
 /**
 This slass should be able to count incoming packets/bytes per second and write it to stdout.

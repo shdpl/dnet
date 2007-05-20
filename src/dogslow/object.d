@@ -15,141 +15,60 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 module dogslow.object;
 
 private import std.stdio;
-private import std.string;
-private import std.c.time;
-private import std.random;
 
-
-///
+/**
+Synchronized object. You chould *not* create it by yourself, but use getObject() and createObject() 
+methods of DogslowClient & DogslowServer.
+*/
 class DogslowObject {
 
 
 	private {
 		DogslowHost Host;
-		DogslowStorage Storage;
 		char[] Class;
-		ushort Id;
+		int Id;
 	}
 
 
-///
 	this(DogslowHost host, char[] class_name, int object_id){
 		Host = host;
 		Class = class_name;
 		Id = object_id;
 	}
 
-
-///
-	this(char[] class_name, int object_id){
-		Class = class_name;
-		Id = object_id;
-	}
-
-
-///
 	~this(){
 	}
 
 
-///
+	/**
+	Gets class name.
+	*/
 	char[] getClass() {
 		return Class;
 	}
 
 
-///
+	/**
+	Gets object id.
+	*/
 	int getId() {
 		return Id;
 	}
 
 
-///
-	void setString(char[] property_name, char[] value, bool replicate=true){
-		/*
-		if (IsServer){
-                        Cache[className][objectId][property_name] = cast(ubyte[])value;
-
-			serverBroadcast([cast(ubyte)PacketType.SET_PROP, cast(ubyte)objectId] ~ cast(ubyte[])(format("%s %s ", className, property_name)) ~ cast(ubyte[])value);
-
-		}
-		else {
-			dnet_client_send([cast(ubyte)PacketType.SET_PROP, cast(ubyte)objectId] ~ cast(ubyte[])(format("%s %s ", className, property_name)) ~ cast(ubyte[])value);
-		}
-		*/
+	/**
+	*/
+	void setString(char[] property_name, char[] value, bool replicate){
+		Host.setString(Class, Id, property_name, value, replicate);
 	}
 
 
-///
-	void setByte(char[] property_name, byte value, bool replicate=true){
-	}
-
-
-///
-	void setShort(char[] property_name, short value, bool replicate=true){
-	}
-
-
-///
-	void setInt(char[] property_name, int value, bool replicate=true){
-	}
-
-
-///
-	void setFloat(char[] property_name, float value, bool replicate=true){
-	}
-
-
-///
-	void setVector3f(char[] property_name, float[3] value, bool replicate=true){
-	}
-
-
-///
-	void setPointer(char[] property_name, void* value){
-	}
-
-
-///	
+	/**
+	*/
 	char[] getString(char[] property_name){
-		return cast(char[])Cache[className][objectId][property_name];
+		return Host.getString(Class, Id, property_name);
 	}
 
-
-///
-	byte getByte(char[] property_name){
-		return 0;
-	}
-
-
-///
-	short getShort(char[] property_name){
-		return 0;
-	}
-
-
-///
-	int getInt(char[] property_name){
-		return 0;
-	}
-
-
-///
-	float getFloat(char[] property_name){
-		return 0.0;
-	}
-
-
-///
-	float[] getVector3f(char[] property_name){
-		return [0,0,0];
-	}
-
-
-///
-	void* getPointer(char[] property_name){
-		return null;
-	}
 
 
 }

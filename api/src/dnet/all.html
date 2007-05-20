@@ -20,6 +20,10 @@ By D's definition, char is "unsigned 8 bit".
 So char[] data or buffers are bytestreams, with char used as ubyte type.
 
 <br><br>
+<b>TODO:</b><br>
+Make client/server use time window of 50ms for sending (not more frequent than 20 updates per sec)
+&amp; PeerQueue group packets into ~ 100 bytes chunks for optimal size and frequency of sending.
+<br><br>
 
 <dl></dl>
 

@@ -7,7 +7,7 @@ import std.date;
 Use reliable sending?
 Experiment with this to get some interesting performance results.
 */
-const bool RELIABLE = false;
+const bool RELIABLE = true;
 
 
 /**
@@ -57,7 +57,7 @@ int main() {
 
 	while(true){
 		c.send("Hello world! Let's flood you!", RELIABLE);
-		msleep(1);
+		msleep(50);
 	}
 	return 0;
 }

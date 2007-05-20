@@ -18,6 +18,25 @@ module dogslow.server;
 /**
 */
 public class DogslowServer : DogslowHost {
+
+
+	this(){
+		Storage = new DogslowStorage();
+	}
+
+
+	public bool create(ushort port){
+	}
+
+
+	public void setString(char[] class_name, int object_id, char[] property_name, char[] value, bool replicate){
+	}
+
+
+	public char getString(char[] class_name, int object_id, char[] property_name){
+	}
+
+
 }
 
 

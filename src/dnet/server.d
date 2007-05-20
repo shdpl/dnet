@@ -150,7 +150,7 @@ public class DnetServer {
 				}
 			}
 
-			msleep(10);
+			msleep(50);
 		}
 		return 0;
 	}

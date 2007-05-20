@@ -25,6 +25,9 @@ Comment:
 By D's definition, char is "unsigned 8 bit". 
 So char[] data or buffers are bytestreams, with char used as ubyte type.
 
+TODO:
+Make client/server use time window of 50ms for sending (not more frequent than 20 updates per sec)
+& PeerQueue group packets into ~ 100 bytes chunks for optimal size and frequency of sending.
 */
 
 module dnet.all;

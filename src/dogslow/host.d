@@ -17,4 +17,17 @@ module dogslow.host;
 /**
 */
 public class DogslowHost {
+
+	DogslowStorage Storage;
+
+	public void registerClass(char[] class_name, char[][] class_properties);
+	public DogslowObject addObject(char[] class_name);
+	public DogslowObject getObject(char[] class_name, int object_id);
+	public DogslowObject getObjects(char[] class_name);
+	public void deleteObject(char[] class_name, int object_id);
+	public void deleteObject(DogslowObject dogslow_object);
+
+	public void setString(char[] class_name, int object_id, char[] property_name, char[] value, bool replicate);
+	public char getString(char[] class_name, int object_id, char[] property_name);
+
 }
