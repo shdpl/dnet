@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2007 Bane <bane@3dnet.co.yu>
+Copyright (c) 2007 Branimir Milosavljevic <bane@3dnet.co.yu>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -10,6 +10,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
+/**
+Comment:
+Address type is same as std.socket.Address.
+*/
 
 module dnet.server;
 
@@ -40,8 +44,8 @@ public class DnetServer {
 		Thread Listener;
 		Thread Watcher;
 
-		long LastSend[char[]];
-		long LastRecv[char[]];
+		long[char[]] LastSend;
+		long[char[]] LastRecv;
 	}
 
 	this(){
@@ -59,16 +63,23 @@ public class DnetServer {
 	true if creating suceeded.
 	*/
 	public bool create(ushort port){
+		bool is_created = true;
+		IsAlive = false;
 		Socket = new UdpSocket(AddressFamily.INET);
-		Socket.bind(new InternetAddress(3333));
-		IsAlive = true;
+		try {
+			Socket.bind(new InternetAddress(3333));
+		}
+		catch (Exception e){
+			is_created = false;
+		}
 		assert(Socket != null);
 		assert(Socket.isAlive());
 		Listener = new Thread(&listener);
 		Listener.start();
 		Watcher = new Thread(&watcher);
 		Watcher.start();
-		return true;
+		IsAlive = Socket.isAlive();
+		return is_created;
 	}
 
 	private int listener(){
@@ -134,7 +145,7 @@ public class DnetServer {
 				}
 			}
 
-			usleep(1000);
+			msleep(10);
 		}
 		return 0;
 	}
@@ -185,7 +196,7 @@ public class DnetServer {
 	Sends data packet to client with optional reliability.
 	*/
 	public void send(Address client, char[] data, bool reliable){
-		if ((client.toString() in ClientsAddress) != null)
+		if (data.length > 0 && (client.toString() in ClientsAddress) != null)
 			ClientsPeer[client.toString()].put(data, reliable);
 	}
 
@@ -193,10 +204,10 @@ public class DnetServer {
 	Sends data packet to all connected clients with optional reliability.
 	*/
 	public void broadcast(char[] data, bool reliable){
-		//writefln("broadcast");
-		foreach(char[] client, PeerQueue peer; ClientsPeer){
-			//writefln("broadcast to %s data %s", client, data);
-			peer.put(data, reliable);
+		if (data.length > 0){
+			foreach(char[] client, PeerQueue peer; ClientsPeer){
+				peer.put(data, reliable);
+			}
 		}
 	}
 

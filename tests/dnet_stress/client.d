@@ -1,4 +1,4 @@
-import dnet.client;
+import dnet.all;
 import std.c.time;
 import std.stdio;
 import std.date;
@@ -48,10 +48,16 @@ public class MyClient : DnetClient {
 int main() {
 
 	MyClient c = new MyClient();
-	c.connect("localhost", 3333);
+	if (c.connect("localhost", 3333) == false){
+		writefln("Failed to connect!");
+		return 0;
+	}
+	else
+		writefln("Connected");
+
 	while(true){
 		c.send("Hello world! Let's flood you!", RELIABLE);
-		usleep(1000);
+		msleep(1);
 	}
 	return 0;
 }

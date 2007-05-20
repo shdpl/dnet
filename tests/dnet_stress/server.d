@@ -1,4 +1,4 @@
-import dnet.server;
+import dnet.all;
 import std.date;
 import std.stdio;
 import std.c.time;
@@ -50,10 +50,16 @@ public class MyServer : DnetServer {
 int main() {
 
 	MyServer s = new MyServer();
-	s.create(3333);
+	if (s.create(3333) == false){
+		writefln("Failed to create server!");
+		return 0;
+	}
+	else
+		writefln("Created server!");
+
 
 	// make main thread sleep forever, while server is working in background
-	usleep(1024*1024*999999);
+	msleep(1000*999999);
 	return 0;
 
 }

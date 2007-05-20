@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2007 Bane <bane@3dnet.co.yu>
+Copyright (c) 2007 Branimir Milosavljevic <bane@3dnet.co.yu>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -11,6 +11,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 
+/**
+*/
 module dnet.client;
 
 import std.stdio;
@@ -62,7 +64,7 @@ public class DnetClient {
 		Socket = new UdpSocket(AddressFamily.INET);
 		Host = new InternetAddress(address, port);
 		IsConnected = false;
-		IsAlive = true;
+		IsAlive = Socket.isAlive();
 		assert(Socket != null);
 		assert(Socket.isAlive());
 
@@ -73,12 +75,21 @@ public class DnetClient {
 		Listener.start();
 		Watcher = new Thread(&watcher);
 		Watcher.start();
-		return true;
+
+		// send first packet to see is there answer
+		send("Let me in!", true);
+
+		// wait for 3 seconds to see are we connected, if not return false
+		for(int i = 0; i < 30; i++){
+			if (IsConnected)
+				return true;
+			else
+				msleep(100);
+		}
+		return IsConnected;
 	}
 
 	private int listener(){
-		//writefln("listener thread initialized");
-		//long last_recv = getUTCtime();
                 Address address;
                 int size;
                 char[1024] buff;
@@ -130,7 +141,7 @@ public class DnetClient {
 				onDisconnect();
 			}
 
-			usleep(1000);
+			msleep(10);
 		}
 		return 0;
 	}
@@ -167,8 +178,9 @@ public class DnetClient {
 	/**
 	Sends data packet to server with optional reliability.
 	*/
-	public void send(char[] data, bool reliable){
-		Peer.put(data, reliable);
+	public void send(char[] data, bool reliable){	
+		if (data.length > 0)
+			Peer.put(data, reliable);
 	}
 }
 
