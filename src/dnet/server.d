@@ -48,14 +48,17 @@ public class DnetServer {
 		long[char[]] LastRecv;
 	}
 
+
 	this(){
 	}
+
 
 	~this(){
 		IsAlive = false;
 		Listener.wait(1000);
 		Watcher.wait(1000);
 	}
+
 
 	/**
 	Creates server listening on local address with selected port.
@@ -81,6 +84,7 @@ public class DnetServer {
 		IsAlive = Socket.isAlive();
 		return is_created;
 	}
+
 
 	private int listener(){
 		Address address;
@@ -108,6 +112,7 @@ public class DnetServer {
 		}
 		return 0;
 	}
+
 
 	private int watcher(){
 		char[] buff;
@@ -150,6 +155,7 @@ public class DnetServer {
 		return 0;
 	}
 
+
 	/**
 	Method called on first packet received from client. 
 	Override it if you want to handle this event.
@@ -162,12 +168,14 @@ public class DnetServer {
 		return true;
 	}
 
+
 	/**
 	Method called on client timeout. Override it if you want to handle this event.
 	*/
 	public void onDisconnect(Address client){
 		writefln("Disconnected from %s", client.toString());
 	}
+
 
 	/**
 	Method called on data packet received from client. Override it if you want to handle this event.
@@ -176,13 +184,6 @@ public class DnetServer {
 		writefln("Packet from %s, data %s", client.toString(), data);
 	}
 
-	/**
-	Return:
-	Is server listening.
-	*/
-	public bool listening(){
-		return true;
-	}
 
 	/**
 	Return:
@@ -192,6 +193,7 @@ public class DnetServer {
 		return ClientsAddress.values;
 	}
 
+
 	/**
 	Sends data packet to client with optional reliability.
 	*/
@@ -199,6 +201,7 @@ public class DnetServer {
 		if (data.length > 0 && (client.toString() in ClientsAddress) != null)
 			ClientsPeer[client.toString()].put(data, reliable);
 	}
+
 
 	/**
 	Sends data packet to all connected clients with optional reliability.
@@ -209,6 +212,10 @@ public class DnetServer {
 				peer.put(data, reliable);
 			}
 		}
+	}
+
+
+	unittest {
 	}
 
 }

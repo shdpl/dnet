@@ -12,7 +12,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 /**
 */
-module dogslow;
+module dogslow.server;
+
+
+/**
+*/
+public class DogslowServer : DogslowHost {
+}
+
+
 
 private import std.stdio;
 private import std.string;

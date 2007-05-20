@@ -45,14 +45,17 @@ public class DnetClient {
 		long LastRecv;
 	}
 
+
 	this(){
 	}
+
 
 	~this(){
 		IsAlive = false;
 		Listener.wait(1000);
 		Watcher.wait(1000);
 	}
+
 
 	/**
 	Connects to server listening at address with port. 
@@ -89,6 +92,7 @@ public class DnetClient {
 		return IsConnected;
 	}
 
+
 	private int listener(){
                 Address address;
                 int size;
@@ -109,6 +113,7 @@ public class DnetClient {
                 }
                 return 0;
 	}
+
 
 	private int watcher(){
 		//writefln("watcher thread initialized");
@@ -146,12 +151,14 @@ public class DnetClient {
 		return 0;
 	}
 
+
 	/**
 	Method called on first packet received from server. Override it if you want to handle this event.
 	*/
 	public void onConnect(){
 		writefln("on connect");
 	}
+
 
 	/**
 	Method called on server timeout. Override it if you want to handle this event.
@@ -160,12 +167,14 @@ public class DnetClient {
 		writefln("on disconnect");
 	}
 
+
 	/**
 	Method called on data packet received from server. Override it if you want to handle this event.
 	*/
 	public void onReceive(char[] data){
 		writefln("on receive data %s", data);
 	}
+
 
 	/**
 	Return:
@@ -175,6 +184,7 @@ public class DnetClient {
 		return IsConnected;
 	}
 
+
 	/**
 	Sends data packet to server with optional reliability.
 	*/
@@ -182,5 +192,11 @@ public class DnetClient {
 		if (data.length > 0)
 			Peer.put(data, reliable);
 	}
+
+
+	unittest {
+	}
+
+
 }
 
