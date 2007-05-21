@@ -117,7 +117,7 @@ public class FifoQueue {
 			q.put("a");
                         assert(q.get() == "a");
                 }
-		writefln("FifoQueue unitest PASS");
+		writefln("FifoQueue unittest PASS");
 	}
 
 }

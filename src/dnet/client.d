@@ -33,7 +33,7 @@ then call connect method.
 */
 public class DnetClient {
 
-	private {
+	protected {
 		UdpSocket Socket;
 		Address Host;
 		PeerQueue Peer;
@@ -51,9 +51,10 @@ public class DnetClient {
 
 
 	~this(){
-		IsAlive = false;
-		Listener.wait(1000);
-		Watcher.wait(1000);
+		if (IsAlive){
+			Listener.wait(1000);
+			Watcher.wait(1000);
+		}
 	}
 
 
@@ -68,28 +69,30 @@ public class DnetClient {
 		Host = new InternetAddress(address, port);
 		IsConnected = false;
 		IsAlive = Socket.isAlive();
-		assert(Socket != null);
-		assert(Socket.isAlive());
 
-		LastSend = getUTCtime();
-		LastRecv = getUTCtime();
+		if (IsAlive){
+			LastSend = getUTCtime();
+			LastRecv = getUTCtime();
 
-		Listener = new Thread(&listener);
-		Listener.start();
-		Watcher = new Thread(&watcher);
-		Watcher.start();
+			Listener = new Thread(&listener);
+			Listener.start();
+			Watcher = new Thread(&watcher);
+			Watcher.start();
 
-		// send first packet to see is there answer
-		send("Let me in!", true);
+			// send first packet to see is there answer
+			send("Let me in!", true);
 
-		// wait for 3 seconds to see are we connected, if not return false
-		for(int i = 0; i < 30; i++){
-			if (IsConnected)
-				return true;
-			else
-				msleep(100);
+			// wait for 3 seconds to see are we connected, if not return false
+			for(int i = 0; i < 30; i++){
+				if (IsConnected)
+					return true;
+				else
+					msleep(100);
+			}
+			return IsConnected;
 		}
-		return IsConnected;
+		else
+			return false;
 	}
 
 

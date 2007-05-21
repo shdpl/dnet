@@ -220,7 +220,7 @@ public class PeerQueue {
 		assert(q.packetGet() == cast(char[])[GOTO, 4]);
 		assert(q.packetGet() == "");
 
-		writefln("PeerQueue unitest PASS");
+		writefln("PeerQueue unittest PASS");
 	}
 
 }

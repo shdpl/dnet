@@ -15,8 +15,6 @@ Public classess you will use:
 <ul>
 <li><a href="server.html">DogslowServer</a>
 <li><a href="client.html">DogslowClient</a>
-<li><a href="object.html">DogslowObject</a>
-
 </ul>
 Private classess you don't need to know about:
 <ul>
@@ -32,4 +30,3 @@ module dogslow.all;
 
 public import dogslow.client;
 public import dogslow.server;
-public import dogslow.object;

@@ -36,7 +36,7 @@ then call create method.
 */
 public class DnetServer {
 
-	private {
+	protected {
 		UdpSocket Socket;
 		bool IsAlive;
 		PeerQueue[char[]] ClientsPeer;
@@ -54,9 +54,10 @@ public class DnetServer {
 
 
 	~this(){
-		IsAlive = false;
-		Listener.wait(1000);
-		Watcher.wait(1000);
+		if (IsAlive){
+			Listener.wait(1000);
+			Watcher.wait(1000);
+		}
 	}
 
 
@@ -75,14 +76,17 @@ public class DnetServer {
 		catch (Exception e){
 			is_created = false;
 		}
-		assert(Socket != null);
-		assert(Socket.isAlive());
-		Listener = new Thread(&listener);
-		Listener.start();
-		Watcher = new Thread(&watcher);
-		Watcher.start();
-		IsAlive = Socket.isAlive();
-		return is_created;
+		IsAlive = Socket.isAlive() && is_created;
+
+		if (IsAlive){
+			Listener = new Thread(&listener);
+			Listener.start();
+			Watcher = new Thread(&watcher);
+			Watcher.start();
+			return true;
+		}
+		else
+			return false;
 	}
 
 
@@ -97,12 +101,17 @@ public class DnetServer {
 			if (size > 0){
 				client = address.toString();
 				if ((address.toString() in ClientsPeer) == null){
-					if (onConnect(address)){
-						ClientsPeer[client] = new PeerQueue();
-						ClientsAddress[client] = address;
-						LastSend[client] = getUTCtime();
-						LastRecv[client] = getUTCtime();
-					}
+
+					// temporary add client on list
+					// this is in case we want to send back client some message from onConnect()
+					ClientsPeer[client] = new PeerQueue();
+					ClientsAddress[client] = address;
+					LastSend[client] = getUTCtime();
+					LastRecv[client] = getUTCtime();
+
+					// if client is not accepted, then remove him from list
+					if (onConnect(address) == false)
+						disconnect(address);
 				}
 				if ((client in ClientsPeer) != null){
 					ClientsPeer[client].packetPut(buff[0..size]);
@@ -143,10 +152,7 @@ public class DnetServer {
 				// if there is more than 3 seconds of no packet from remote end, we act like we lost connection
 				if ((getUTCtime() - LastRecv[client])/TicksPerSecond > 3.00){
 					onDisconnect(ClientsAddress[client]);
-					ClientsAddress.remove(client);
-					ClientsPeer.remove(client);
-					LastSend.remove(client);
-					LastRecv.remove(client);
+					disconnect(ClientsAddress[client]);
 				}
 			}
 
@@ -214,6 +220,16 @@ public class DnetServer {
 		}
 	}
 
+	/**
+	Disconnects client manually. Does not raise onDisconnect() event.
+	*/
+	public void disconnect(Address client){
+		char[] address = client.toString();
+		ClientsAddress.remove(address);
+		ClientsPeer.remove(address);
+		LastSend.remove(address);
+		LastRecv.remove(address);
+	}
 
 	unittest {
 	}
