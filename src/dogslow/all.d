@@ -20,7 +20,6 @@ Public classess you will use:
 </ul>
 Private classess you don't need to know about:
 <ul>
-<li><a href="host.html">DogslowHost</a>
 <li><a href="storage.html">DogslowStorage</a>
 </ul>
 Comment:

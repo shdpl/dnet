@@ -14,27 +14,40 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 module dogslow.client;
 
+private import std.stdio;
+private import dnet.client;
+private import dogslow.obj;
+private import dogslow.storage;
 
-/**
-*/
-public class DogslowClient : DogslowHost {
-
-
-	this(){
-		Storage = new DogslowStorage();
+public class DogslowClient : DnetClient {
+        private {
+		int ClientId = -1;
+                DogslowStorage Storage;
+        }
+        this(){
+                super();
+                Storage = new DogslowStorage();
+        }
+	public int getClientId(){
+		return ClientId;
 	}
-
-
-	public bool connect(char[] address, ushort port){
+	public void replicate(char[] data){
+		writefln("client sends data %s", data);
 	}
-
-
-	public void setString(char[] class_name, int object_id, char[] property_name, char[] value, bool replicate){
-	}
-
-
-	public char getString(char[] class_name, int object_id, char[] property_name){
-	}
-
-
+        public void registerClass(char[] class_name, char[][] class_properties){
+        }
+        public DogslowObject addObject(char[] class_name){
+		return new DogslowObject(&Storage, &replicate, class_name, 1);
+        }
+        public DogslowObject getObject(char[] class_name, int object_id){
+		return null;
+        }
+        public DogslowObject getObjects(char[] class_name){
+		return null;
+        }
+        public void deleteObject(char[] class_name, int object_id){
+        }
+        public void deleteObject(DogslowObject dogslow_object){
+        }
 }
+

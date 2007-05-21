@@ -20,6 +20,15 @@ private import std.c.stdlib;
 private import std.c.string;
 
 /**
+Base unit for storage. 
+Convenient to cast to bytearray for network transfer.
+*/
+struct Atom {
+	void* ptr = null; /// pointer to data in memory
+	int size = 0; /// number of bytes in data
+}
+
+/**
 Class that stores objects with their properties in local memory. 
 All data is stored as void* and converted on each read/write.
 This baby does a lot of malloc(), memcpy() and free()-ing and that is all what it does.
@@ -39,7 +48,7 @@ class DogslowStorage {
 		int[char[]][int] PropertyNameToId; // property_id[class_id][property_name]
 		char[][int][int] PropertyName; // property_name[class_id][property_id]
 
-		void*[int][int][int] Cache; 
+		Atom[int][int][int] Cache; 
 	}
 
 
@@ -53,9 +62,10 @@ class DogslowStorage {
 
 	/**
 	*/
-	public void registerClass(char[] class_name, char[][]class_properties){
+	public int registerClass(char[] class_name, char[][]class_properties){
+		int class_id = -1;
 		if (ClassName.length < 256 && (class_name in ClassNameToId) == null && class_properties.length <= 256){
-			int class_id = ClassName.length;
+			class_id = ClassName.length;
 			ClassName[class_id] = class_name;
 			ClassNameToId[class_name] = class_id;
 			foreach(uint property_id, char[] property_name; class_properties){
@@ -64,6 +74,7 @@ class DogslowStorage {
 			}
 
 		}
+		return class_id;
 	}
 
 	private int classNameToId(char[] class_name){
@@ -88,47 +99,58 @@ class DogslowStorage {
 
 		// value migh not be set yet so an exception might be raised
 		try {
-			if (Cache[class_id][object_id][property_id] != null)
-				free(Cache[class_id][object_id][property_id]);
+			if (Cache[class_id][object_id][property_id].size > 0){
+				free(Cache[class_id][object_id][property_id].ptr);
+			}
 		}
 		catch {
 		}
 
-		void* p = malloc(size);
-		memcpy(p, value, size);
-		Cache[class_id][object_id][property_id] = p;
+		Atom a;
+		a.ptr = malloc(size);
+		a.size = size;
+		memcpy(a.ptr, value, size);
+		Cache[class_id][object_id][property_id] = a;
 	}
 
 
-	private void* getRaw(char[] class_name, int object_id, char[] property_name){
+	public Atom getRaw(char[] class_name, int object_id, char[] property_name){
 		int class_id = classNameToId(class_name);
 		int property_id = propertyNameToId(class_name, property_name);
-		void* p;
+		Atom a;
 		// value migh not be set yet so an exception might be raised
 		try {
-			p = Cache[class_id][object_id][property_id];
+			a = Cache[class_id][object_id][property_id];
 		}
 		catch {
-			p = null;
+			
 		}
-		return p;
+		return a;
 	}
 
 
 	/**
 	*/
 	public void setString(char[] class_name, int object_id, char[] property_name, char[] value){
-		setRaw(class_name, object_id, property_name, &value, value.sizeof + value.length);
+		// dynamic arrays are stored as static to save space
+		// we skip dynamic array 8 byte header (value.sizeof), we store data only
+		setRaw(class_name, object_id, property_name, value.ptr, value.length);
 	}
 
 	/**
 	*/
 	public char[] getString(char[] class_name, ushort object_id, char[] property_name){
-		void* p = getRaw(class_name, object_id, property_name);
-		if (p == null)
+		Atom a = getRaw(class_name, object_id, property_name);
+
+		if (a.size == 0)
 			return "";
-		else
-			return *(cast(char[]*)p);
+		else {
+			// we get stored array and converrt it to dynamic array
+			char[] buff;
+			buff.length = a.size;
+			memcpy(buff.ptr, a.ptr, a.size);
+			return buff;
+		}
 	}
 
 
@@ -143,11 +165,11 @@ class DogslowStorage {
 	*/
 	
 	public int getInt(char[] class_name, ushort object_id, char[] property_name){
-		void* p = getRaw(class_name, object_id, property_name);
-		if (p == null)
+		Atom a = getRaw(class_name, object_id, property_name);
+		if (a.size == 0)
 			return 0;
 		else
-			return *(cast(int*)p);
+			return *(cast(int*)a.ptr);
 	}
 	
 
@@ -176,7 +198,13 @@ class DogslowStorage {
 		// test those values
 		assert(s.getString("car", 0, "model") == "ferrari");
 		assert(s.getInt("car", 0, "price") == 123000);
-		
+
+
+		// memory leak test. should eat about 500mb of RAM very fast if there is a leak
+		for (int i = 0; i < 500*1024; i++){
+			s.setString("car", 0, "model", repeat("x", 1024));
+			assert(s.getString("car", 0, "model") == repeat("x", 1024));
+		}
 
 		writefln("DogslowStorage unitest PASS");
 

@@ -17,26 +17,26 @@ module dogslow.server;
 
 /**
 */
-public class DogslowServer : DogslowHost {
-
-
+public class DogslowServer : DnetServer {
+	private {
+		DogslowStorage Storage;
+	}
 	this(){
+		super();
 		Storage = new DogslowStorage();
 	}
-
-
-	public bool create(ushort port){
-	}
-
-
-	public void setString(char[] class_name, int object_id, char[] property_name, char[] value, bool replicate){
-	}
-
-
-	public char getString(char[] class_name, int object_id, char[] property_name){
-	}
-
-
+        public void registerClass(char[] class_name, char[][] class_properties){
+        }
+        public DogslowObject addObject(char[] class_name){
+        }
+        public DogslowObject getObject(char[] class_name, int object_id){
+        }
+        public DogslowObject getObjects(char[] class_name){
+        }
+        public void deleteObject(char[] class_name, int object_id){
+        }
+        public void deleteObject(DogslowObject dogslow_object){
+        }
 }
 
 

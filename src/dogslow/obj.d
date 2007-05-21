@@ -12,28 +12,37 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 /**
 */
-module dogslow.object;
+module dogslow.obj;
 
 private import std.stdio;
+private import std.c.string;
+private import dogslow.storage;
 
 /**
 Synchronized object. You chould *not* create it by yourself, but use getObject() and createObject() 
 methods of DogslowClient & DogslowServer.
 */
-class DogslowObject {
-
+public class DogslowObject {
 
 	private {
-		DogslowHost Host;
+		void delegate(char[]) Replicator;
+		DogslowStorage Storage;
 		char[] Class;
 		int Id;
 	}
 
 
-	this(DogslowHost host, char[] class_name, int object_id){
-		Host = host;
+	/**
+	Do not call constructor yourself. 
+	Do not create object of this class directly.
+	Use getObject() or createObject() instead.
+	*/
+	this(DogslowStorage* storage, void delegate(char[]) replicator, char[] class_name, int object_id){
+		Storage = *storage;
+		Replicator = replicator;
 		Class = class_name;
 		Id = object_id;
+		assert(Sender != null);
 	}
 
 	~this(){
@@ -43,7 +52,7 @@ class DogslowObject {
 	/**
 	Gets class name.
 	*/
-	char[] getClass() {
+	public char[] getClass() {
 		return Class;
 	}
 
@@ -51,24 +60,56 @@ class DogslowObject {
 	/**
 	Gets object id.
 	*/
-	int getId() {
+	public int getId() {
 		return Id;
 	}
 
 
 	/**
 	*/
-	void setString(char[] property_name, char[] value, bool replicate){
-		Host.setString(Class, Id, property_name, value, replicate);
+	private void doReplicate(char[] property_name){
+		Atom a = Storage.getRaw(Class, Id, property_name);
+		char[] buff;
+		buff.length = a.size;
+		memcpy(buff.ptr, a.ptr, a.size);
+		Replicator(buff); 
 	}
 
 
 	/**
 	*/
-	char[] getString(char[] property_name){
-		return Host.getString(Class, Id, property_name);
+	public void setString(char[] property_name, char[] value, bool replicate){
+		Storage.setString(Class, Id, property_name, value);
+		if (replicate)
+			doReplicate(property_name);
 	}
 
+
+	/**
+	*/
+	public char[] getString(char[] property_name){
+		return Storage.getString(Class, Id, property_name);
+	}
+
+
+        /**
+        */
+        public void setInt(char[] property_name, int value, bool replicate){
+                Storage.setInt(Class, Id, property_name, value);
+                if (replicate)
+                        doReplicate(property_name);
+        }
+
+
+        /**
+        */
+        public int getInt(char[] property_name){
+                return Storage.getInt(Class, Id, property_name);
+        }
+
+
+	unittest {
+	}
 
 
 }
