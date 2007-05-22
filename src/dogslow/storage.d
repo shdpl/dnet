@@ -52,53 +52,31 @@ class DogslowStorage {
 	}
 
 
-	/**
-	*/
-	//public int registerClass(char[] class_name, char[][]class_properties){
-	//	int class_id = -1;
-	//	if (ClassName.length < 256 && (class_name in ClassNameToId) == null && class_properties.length <= 256){
-	//		class_id = ClassName.length;
-	//		ClassName[class_id] = class_name;
-	//		ClassNameToId[class_name] = class_id;
-	//		foreach(uint property_id, char[] property_name; class_properties){
-	//			PropertyName[class_id][property_id] = property_name;
-	//			PropertyNameToId[class_id][property_name] = property_id;
-	//		}
-//
-//		}
-//		return class_id;
-//	}
-
-//	private int classNameToId(char[] class_name){
-//		if ((class_name in ClassNameToId) == null)
-//			return -1;
-//		else
-//			return ClassNameToId[class_name];
-//	}
-
-//	private int propertyNameToId(char[] class_name, char[] property_name){
-//		if ((property_name in PropertyNameToId[classNameToId(class_name)]) == null)
-//			return -1;
-//		else
-//			return PropertyNameToId[classNameToId(class_name)][property_name];
-//	}
-
-
 	public void del(){
+		try {
+			foreach(int class_id; Cache.keys){
+				del(class_id);
+			}
+		}
+		catch {}
 	}
 
 	public void del(int class_id){
 		try {
+			foreach(int object_id; Cache[class_id].keys){
+				del(class_id, object_id);
+			}
 			Cache.remove(class_id);
-			// must free pointers too
 		}
 		catch {}
 	}
 
 	public void del(int class_id, int object_id){
 		try {
+			foreach(int property_id; Cache[class_id][object_id].keys){
+				del(class_id, object_id, property_id);
+			}
 			Cache[class_id].remove(object_id);
-			// must free pointers too
 		}
 		catch {}
 	}
@@ -112,14 +90,6 @@ class DogslowStorage {
 	}
 
 
-	//public void setRaw(char[] class_name, int object_id, char[] property_name, void* value, uint size){
-	//	int class_id = classNameToId(class_name);
-	//	int property_id = propertyNameToId(class_name, property_name);
-	//	if (class_id == -1 || property_id == -1)
-	//		return;
-	//	setRaw(class_id, object_id, property_id, value, size);
-	//}
-
 	public void setRaw(int class_id, int object_id, int property_id, void* value, uint size){
 		del(class_id, object_id, property_id);
 		Atom a;
@@ -131,20 +101,6 @@ class DogslowStorage {
 		Cache[class_id][object_id][property_id] = a;
 	}
 
-
-	//public Atom getRaw(char[] class_name, int object_id, char[] property_name){
-	//	int class_id = classNameToId(class_name);
-	//	int property_id = propertyNameToId(class_name, property_name);
-	//	Atom a;
-	//	// value migh not be set yet so an exception might be raised
-	//	try {
-	//		a = Cache[class_id][object_id][property_id];
-	//	}
-	//	catch {
-	//		
-	//	}
-	//	return a;
-	//}
 
 	public Atom getRaw(int class_id, int object_id, int property_id){
 		Atom a;
@@ -188,6 +144,8 @@ class DogslowStorage {
 	}
 
 
+	/**
+	*/
 	public void setString(int class_id, int object_id, int property_id, char[] value){
 		// dynamic arrays are stored as static to save space
 		// we skip dynamic array 8 byte header (value.sizeof), we store data only
@@ -197,11 +155,39 @@ class DogslowStorage {
 
 	/**
 	*/
-	//public void setString(char[] class_name, int object_id, char[] property_name, char[] value){
-	//	// dynamic arrays are stored as static to save space
-	//	// we skip dynamic array 8 byte header (value.sizeof), we store data only
-	//	setRaw(class_name, object_id, property_name, value.ptr, value.length);
-	//}
+	public void setByte(int class_id, int object_id, int property_id, char value){
+		setRaw(class_id, object_id, property_id, &value, 1);
+	}
+
+
+	/**
+	*/
+	public void setShort(int class_id, int object_id, int property_id, short value){
+		setRaw(class_id, object_id, property_id, &value, 2);
+	}
+
+
+	/**
+	*/
+	public void setInt(int class_id, int object_id, int property_id, int value){
+		setRaw(class_id, object_id, property_id, &value, 4);
+	}
+
+
+	/**
+	*/
+	public void setFloat(int class_id, int object_id, int property_id, float value){
+		setRaw(class_id, object_id, property_id, &value, 4);
+	}
+
+
+	/**
+	*/
+	public void setVector3f(int class_id, int object_id, int property_id, float[3] value){
+		setRaw(class_id, object_id, property_id, value.ptr, 12);
+	}
+
+
 
 	/**
 	*/
@@ -219,62 +205,97 @@ class DogslowStorage {
 		}
 	}
 
+	/**
+	*/
+	public char getByte(int class_id, int object_id, int property_id){
+		Atom a = getRaw(class_id, object_id, property_id);
+
+		if (a.size == 1)
+			return *(cast(char*)a.ptr);
+		else
+			return 0;
+	}
 
 	/**
 	*/
-	//public void setInt(char[] class_name, int object_id, char[] property_name, int value){
-	//	setRaw(class_name, object_id, property_name, &value, 4);
-	//}
+	public short getShort(int class_id, int object_id, int property_id){
+		Atom a = getRaw(class_id, object_id, property_id);
+
+		if (a.size == 2)
+			return *(cast(short*)a.ptr);
+		else
+			return 0;
+	}
 
 
 	/**
 	*/
-	
-	//public int getInt(char[] class_name, ushort object_id, char[] property_name){
-	//	Atom a = getRaw(class_name, object_id, property_name);
-	//	if (a.size == 0)
-	//		return 0;
-	//	else
-	//		return *(cast(int*)a.ptr);
-	//}
-	
+	public int getInt(int class_id, int object_id, int property_id){
+		Atom a = getRaw(class_id, object_id, property_id);
+
+		if (a.size == 4)
+			return *(cast(int*)a.ptr);
+		else
+			return 0;
+	}
+
+	/**
+	*/
+	public float getFloat(int class_id, int object_id, int property_id){
+		Atom a = getRaw(class_id, object_id, property_id);
+
+		if (a.size == 4)
+			return *(cast(float*)a.ptr);
+		else
+			return 0;
+	}
+
+	/**
+	*/
+	public float[] getVector3f(int class_id, int object_id, int property_id){
+		Atom a = getRaw(class_id, object_id, property_id);
+
+		if (a.size == 12){
+			float[] buff;
+			buff.length = 3;
+			memcpy(buff.ptr, a.ptr, 12);
+			return buff;
+		}
+		else
+			return cast(float[])[0, 0, 0];
+	}
 
 	unittest {
-	/*	DogslowStorage s = new DogslowStorage();
 
-		// register some classess
-		assert(s.classNameToId("tree") == -1);
-		assert(s.classNameToId("car") == -1);
-		s.registerClass("car", ["model", "speed", "price"]);
-		assert(s.classNameToId("car") == 0);
-		assert(s.propertyNameToId("car", "model") == 0);
-		assert(s.propertyNameToId("car", "speed") == 1);
-		assert(s.propertyNameToId("car", "price") == 2);
+		DogslowStorage s = new DogslowStorage();
 
-		s.registerClass("fish", ["species", "weight", "age"]);
-		assert(s.classNameToId("fish") == 1);
-		assert(s.propertyNameToId("fish", "species") == 0);
-		assert(s.propertyNameToId("fish", "weight") == 1);
-		assert(s.propertyNameToId("fish", "age") == 2);
+		// unique class id for CAR class
+		int CAR = 1;
+
+		// unique property id's for CAR class
+		int MODEL = 0;
+		int DRIVE = 1;
+		int YEAR = 2;
+		int WEIGHT = 3;
+		int PRICE = 4;
+		int POSITION = 5;
 
 		// store some values
-		s.setString("car", 0, "model", "ferrari");
-		s.setInt("car", 0, "price",  123000);
+		s.setString(CAR, 0, MODEL, "ferrari");
+		s.setByte(CAR, 0, DRIVE, 1);
+		s.setShort(CAR, 0, YEAR, 2007);
+		s.setInt(CAR, 0, WEIGHT, 1600);
+		s.setFloat(CAR, 0, PRICE, 123000.50);
+		s.setVector3f(CAR, 0, POSITION, cast(float[])[3,44,1]);
 
 		// test those values
-		assert(s.getString("car", 0, "model") == "ferrari");
-		assert(s.getInt("car", 0, "price") == 123000);
+		assert(s.getString(CAR, 0, MODEL) == "ferrari");
+		assert(s.getByte(CAR, 0, DRIVE) == 1);
+		assert(s.getShort(CAR, 0, YEAR) == 2007);
+		assert(s.getInt(CAR, 0, WEIGHT) == 1600);
+		assert(s.getFloat(CAR, 0, PRICE) == 123000.50);
+		assert(s.getVector3f(CAR, 0, POSITION) == cast(float[])[3,44,1]);
 
-
-		// memory leak test. should eat about 500mb of RAM very fast if there is a leak
-		// uncomment if you like
-		
-		//for (int i = 0; i < 500*1024; i++){
-		//	s.setString("car", 0, "model", repeat("x", 1024));
-		//	assert(s.getString("car", 0, "model") == repeat("x", 1024));
-		//}
-		
-*/
 		writefln("DogslowStorage unittest PASS");
 
 	}

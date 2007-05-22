@@ -18,6 +18,7 @@ private import std.stdio;
 private import std.string;
 private import std.c.time;
 private import std.c.stdlib;
+private import std.c.string;
 
 private import std.thread;
 
@@ -34,6 +35,7 @@ const int DELETE = 3;
 const int CLIENT = 0;
 // predefined property
 const int ADDRESS = 0;
+const int PORT = 1;
 
 
 public class DogslowServer : DnetServer {
@@ -65,8 +67,9 @@ public class DogslowServer : DnetServer {
 			}
 		}
 		int client_id = addObject(CLIENT);
-		writefln(">>>>>>>> %d", client_id);
-		setString(CLIENT, client_id, 0, client.toString(), true);
+		//writefln(">>>>>>>> %d", client_id);
+		setString(CLIENT, client_id, ADDRESS, (cast(InternetAddress)client).toAddrString(), true);
+		setShort(CLIENT, client_id, PORT, (cast(InternetAddress)client).port(), true);
 		send(client, cast(char[])[CLIENTID, client_id/256, client_id%256], true);
 		send(client, cast(char[])[UPLOADED], true);
 		return true;
@@ -94,7 +97,8 @@ public class DogslowServer : DnetServer {
 
 	public void onDisconnect(Address client){
 		foreach(int client_id; getObjects(CLIENT)){
-			if (getString(CLIENT, client_id, ADDRESS) == client.toString()){
+			if (getString(CLIENT, client_id, ADDRESS) == (cast(InternetAddress)client).toAddrString() && 
+				getShort(CLIENT, client_id, PORT) == (cast(InternetAddress)client).port()){
 				deleteObject(CLIENT, client_id);
 			}
 		}
@@ -125,9 +129,78 @@ public class DogslowServer : DnetServer {
 		Storage.setString(class_id, object_id, property_id, value);
 	}
 
+	public void setByte(int class_id, int object_id, int property_id, char value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, value];
+			broadcast(buff, true);
+		}
+		Storage.setByte(class_id, object_id, property_id, value);
+	}
+
+	public void setShort(int class_id, int object_id, int property_id, short value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, 0, 0];
+			memcpy(buff.ptr + 5, &value, 2);
+			broadcast(buff, true);
+		}
+		Storage.setShort(class_id, object_id, property_id, value);
+	}
+
+	public void setInt(int class_id, int object_id, int property_id, int value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, 0, 0, 0, 0];
+			memcpy(buff.ptr + 5, &value, 4);
+			broadcast(buff, true);
+		}
+		Storage.setInt(class_id, object_id, property_id, value);
+	}
+
+
+	public void setFloat(int class_id, int object_id, int property_id, float value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, 0, 0, 0, 0];
+			memcpy(buff.ptr + 5, &value, 4);
+			broadcast(buff, true);
+		}
+		Storage.setFloat(class_id, object_id, property_id, value);
+	}
+
+	public void setVector3f(int class_id, int object_id, int property_id, float[3] value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+			memcpy(buff.ptr + 5, value.ptr, 12);
+			broadcast(buff, true);
+		}
+		Storage.setVector3f(class_id, object_id, property_id, value);
+	}
+
 	public char[] getString(int class_id, int object_id, int property_id){
 		return Storage.getString(class_id, object_id, property_id);
 	}
+	public char getByte(int class_id, int object_id, int property_id){
+		return Storage.getByte(class_id, object_id, property_id);
+	}
+	public short getShort(int class_id, int object_id, int property_id){
+		return Storage.getShort(class_id, object_id, property_id);
+	}
+
+	public int getInt(int class_id, int object_id, int property_id){
+		return Storage.getInt(class_id, object_id, property_id);
+	}
+
+	public float getFloat(int class_id, int object_id, int property_id){
+		return Storage.getFloat(class_id, object_id, property_id);
+	}
+
+	public float[] getVector3f(int class_id, int object_id, int property_id){
+		return Storage.getVector3f(class_id, object_id, property_id);
+	}
+
 
 
 }

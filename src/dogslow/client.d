@@ -18,6 +18,7 @@ private import std.stdio;
 private import std.string;
 private import std.c.time;
 private import std.c.stdlib;
+private import std.c.string;
 
 private import dnet.client;
 private import dogslow.storage;
@@ -31,6 +32,9 @@ const int DELETE = 3;
 const int CLIENT = 0;
 // predefined property
 const int ADDRESS = 0;
+const int PORT = 1;
+
+
 
 
 public class DogslowClient : DnetClient {
@@ -126,9 +130,85 @@ public class DogslowClient : DnetClient {
 			Storage.setString(class_id, object_id, property_id, value);
 	}
 
+	public void setByte(int class_id, int object_id, int property_id, char value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, value];
+			send(buff, true);
+		}
+		else
+			Storage.setByte(class_id, object_id, property_id, value);
+	}
+
+	public void setShort(int class_id, int object_id, int property_id, short value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, 0, 0];
+			memcpy(buff.ptr + 5, &value, 2);
+			send(buff, true);
+		}
+		else
+			Storage.setShort(class_id, object_id, property_id, value);
+	}
+
+	public void setInt(int class_id, int object_id, int property_id, int value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, 0, 0, 0, 0];
+			memcpy(buff.ptr + 5, &value, 4);
+			send(buff, true);
+		}
+		else
+			Storage.setInt(class_id, object_id, property_id, value);
+	}
+
+
+	public void setFloat(int class_id, int object_id, int property_id, float value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, 0, 0, 0, 0];
+			memcpy(buff.ptr + 5, &value, 4);
+			send(buff, true);
+		}
+		else
+			Storage.setFloat(class_id, object_id, property_id, value);
+	}
+
+	public void setVector3f(int class_id, int object_id, int property_id, float[3] value, bool replicate){
+		if (replicate){
+			char[] buff;
+			buff = cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+			memcpy(buff.ptr + 5, value.ptr, 12);
+			send(buff, true);
+		}
+		else
+			Storage.setVector3f(class_id, object_id, property_id, value);
+	}
+
+
 	public char[] getString(int class_id, int object_id, int property_id){
 		return Storage.getString(class_id, object_id, property_id);
 	}
+	public char getByte(int class_id, int object_id, int property_id){
+		return Storage.getByte(class_id, object_id, property_id);
+	}
+	public short getShort(int class_id, int object_id, int property_id){
+		return Storage.getShort(class_id, object_id, property_id);
+	}
+
+	public int getInt(int class_id, int object_id, int property_id){
+		return Storage.getInt(class_id, object_id, property_id);
+	}
+
+	public float getFloat(int class_id, int object_id, int property_id){
+		return Storage.getFloat(class_id, object_id, property_id);
+	}
+
+	public float[] getVector3f(int class_id, int object_id, int property_id){
+		return Storage.getVector3f(class_id, object_id, property_id);
+	}
+
+
 
 
 }
