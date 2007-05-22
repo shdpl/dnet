@@ -12,7 +12,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 /**
 */
-module dogslow.server;
+module dogslow_server;
 
 private import std.stdio;
 private import std.string;
@@ -23,19 +23,23 @@ private import std.c.string;
 private import std.thread;
 
 
-private import dnet.server;
-private import dogslow.storage;
+private import dnet_server;
+private import storage;
 
 const int CLIENTID = 0;
 const int REPLICATE = 1;
 const int UPLOADED = 2;
 const int DELETE = 3;
 
-// predefined object
-const int CLIENT = 0;
-// predefined property
-const int ADDRESS = 0;
-const int PORT = 1;
+/**
+Predefined class. It contains data about connected clients.
+*/
+public const int CLIENT = 0;
+/**
+Predefined string property for CLIENT class. 
+Contains string in form of "IPAddress:Port" of connected client.
+*/
+public const int ADDRESS = 0;
 
 
 public class DogslowServer : DnetServer {
@@ -53,30 +57,35 @@ public class DogslowServer : DnetServer {
         }
 
 	public bool onConnect(Address client){
+		// replicate all in Storage to new client
 		foreach(int class_id; Storage.getClasses){
 			foreach(int object_id; Storage.getObjects(class_id)){
 				foreach(int property_id; Storage.getProperties(class_id, object_id)){
-					char[] buff = Storage.getString(class_id, object_id, property_id);
-					if (buff.length > 0){
-						send(client, 
-							cast(char[])[REPLICATE, class_id, object_id/256, object_id%256, property_id] ~ 
-							buff, 
-						true);
+					Atom a = Storage.getRaw(class_id, object_id, property_id);
+					if (a.size > 0 && a.replicate){
+						char[] buff;
+						buff.length = 5 + a.size;
+						buff[0] = REPLICATE;
+						buff[1] = class_id;
+						buff[2] = object_id/256;
+						buff[3] = object_id%256;
+						buff[4] = property_id;
+						memcpy(buff.ptr+5, a.ptr, a.size);
+						send(client, buff, true);
 					}
 				}
 			}
 		}
+		// send client id and updated flag
 		int client_id = addObject(CLIENT);
-		//writefln(">>>>>>>> %d", client_id);
-		setString(CLIENT, client_id, ADDRESS, (cast(InternetAddress)client).toAddrString(), true);
-		setShort(CLIENT, client_id, PORT, (cast(InternetAddress)client).port(), true);
+		setString(CLIENT, client_id, ADDRESS, client.toString(), true);
 		send(client, cast(char[])[CLIENTID, client_id/256, client_id%256], true);
 		send(client, cast(char[])[UPLOADED], true);
 		return true;
 	}
 
 	public void onReceive(Address client, char[] data){
-		writefln("got > %s", cast(ubyte[])data);
+		//writefln("got > %s", cast(ubyte[])data);
 		switch (data[0]){
 			case REPLICATE:
 				int class_id = data[1];
@@ -97,15 +106,14 @@ public class DogslowServer : DnetServer {
 
 	public void onDisconnect(Address client){
 		foreach(int client_id; getObjects(CLIENT)){
-			if (getString(CLIENT, client_id, ADDRESS) == (cast(InternetAddress)client).toAddrString() && 
-				getShort(CLIENT, client_id, PORT) == (cast(InternetAddress)client).port()){
+			if (getString(CLIENT, client_id, ADDRESS) == client.toString()){
 				deleteObject(CLIENT, client_id);
 			}
 		}
 	}
 
 	public int addObject(int class_id){
-		//return getObjects(class_id).length;
+		// this is not safe, id is not unique
 		return rand() % (256*256);
 	}
 
@@ -179,6 +187,10 @@ public class DogslowServer : DnetServer {
 		Storage.setVector3f(class_id, object_id, property_id, value);
 	}
 
+        public void setInt(int class_id, int object_id, int property_id, void* value){
+                Storage.setPointer(class_id, object_id, property_id, value);
+        }
+
 	public char[] getString(int class_id, int object_id, int property_id){
 		return Storage.getString(class_id, object_id, property_id);
 	}
@@ -201,6 +213,9 @@ public class DogslowServer : DnetServer {
 		return Storage.getVector3f(class_id, object_id, property_id);
 	}
 
+        public void* getPointer(int class_id, int object_id, int property_id){
+                return Storage.getPointer(class_id, object_id, property_id);
+        }
 
 
 }

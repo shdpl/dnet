@@ -13,8 +13,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 /**
 Public classess you will use:
 <ul>
-<li><a href="server.html">DnetServer</a>
-<li><a href="client.html">DnetClient</a>
+<li><a href="dnet_server.html">DnetServer</a>
+<li><a href="dnet_client.html">DnetClient</a>
 </ul>
 Private classess you don't need to know about:
 <ul>
@@ -30,7 +30,7 @@ Make client/server use time window of 50ms for sending (not more frequent than 2
 & PeerQueue group packets into ~ 100 bytes chunks for optimal size and frequency of sending.
 */
 
-module dnet.all;
+module dnet_all;
 
-public import dnet.client;
-public import dnet.server;
+public import dnet_client;
+public import dnet_server;

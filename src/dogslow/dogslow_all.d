@@ -13,8 +13,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 /**
 Public classess you will use:
 <ul>
-<li><a href="server.html">DogslowServer</a>
-<li><a href="client.html">DogslowClient</a>
+<li><a href="dogslow_server.html">DogslowServer</a>
+<li><a href="dogslow_client.html">DogslowClient</a>
 </ul>
 Private classess you don't need to know about:
 <ul>
@@ -26,7 +26,7 @@ So char[] data or buffers are bytestreams, with char used as ubyte type.
 
 */
 
-module dogslow.all;
+module dogslow_all;
 
-public import dogslow.client;
-public import dogslow.server;
+public import dogslow_client;
+public import dogslow_server;

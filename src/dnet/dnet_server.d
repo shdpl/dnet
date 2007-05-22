@@ -15,7 +15,7 @@ Comment:
 Address type is same as std.socket.Address.
 */
 
-module dnet.server;
+module dnet_server;
 
 import std.stdio;
 import std.string;
@@ -23,7 +23,8 @@ import std.c.time;
 import std.thread;
 public import std.socket; // need Address defined
 import std.date;
-import dnet.peer_queue;
+
+import peer_queue;
 
 version(Windows) 
 	pragma(lib, "ws2_32.lib");
@@ -156,7 +157,10 @@ public class DnetServer {
 				}
 			}
 
-			msleep(50);
+			version (Windows)
+				msleep(50);
+			else
+				usleep(50000);
 		}
 		return 0;
 	}

@@ -1,4 +1,4 @@
-import dnet.all;
+import dnet_all;
 import std.c.time;
 import std.stdio;
 import std.date;

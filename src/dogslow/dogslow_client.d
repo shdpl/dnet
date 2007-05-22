@@ -12,7 +12,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 /**
 */
-module dogslow.client;
+module dogslow_client;
 
 private import std.stdio;
 private import std.string;
@@ -20,21 +20,23 @@ private import std.c.time;
 private import std.c.stdlib;
 private import std.c.string;
 
-private import dnet.client;
-private import dogslow.storage;
+private import dnet_client;
+private import storage;
 
 const int CLIENTID = 0;
 const int REPLICATE = 1;
 const int UPLOADED = 2;
 const int DELETE = 3;
 
-// predefined object
-const int CLIENT = 0;
-// predefined property
-const int ADDRESS = 0;
-const int PORT = 1;
-
-
+/**
+Predefined class. It contains data about connected clients.
+*/
+public const int CLIENT = 0;
+/**
+Predefined string property for CLIENT class. 
+Contains string in form of "IPAddress:Port" of connected client.
+*/
+public const int ADDRESS = 0;
 
 
 public class DogslowClient : DnetClient {
@@ -63,7 +65,10 @@ public class DogslowClient : DnetClient {
 					writefln("data uploaded");
 					return true;
 				}
-				msleep(50);
+				version (Windows)
+					msleep(50);
+				else
+					usleep(50000);
 			}
 		}
 		return false;
@@ -77,7 +82,7 @@ public class DogslowClient : DnetClient {
 	}
 
 	public void onReceive(char[] data){
-		writefln("got > %s", cast(ubyte[])data);
+		//writefln("got > %s", cast(ubyte[])data);
 		switch (data[0]){
 			case CLIENTID:
 				ClientId = data[1];
@@ -106,7 +111,7 @@ public class DogslowClient : DnetClient {
 	}
 
 	public int addObject(int class_id){
-		//return getObjects(class_id).length;
+		// this is not safe, id is not unique
 		return rand() % (256*256);
 	}
 
@@ -185,6 +190,9 @@ public class DogslowClient : DnetClient {
 			Storage.setVector3f(class_id, object_id, property_id, value);
 	}
 
+        public void setInt(int class_id, int object_id, int property_id, void* value){
+                Storage.setPointer(class_id, object_id, property_id, value);
+        }
 
 	public char[] getString(int class_id, int object_id, int property_id){
 		return Storage.getString(class_id, object_id, property_id);
@@ -208,6 +216,9 @@ public class DogslowClient : DnetClient {
 		return Storage.getVector3f(class_id, object_id, property_id);
 	}
 
+        public void* getPointer(int class_id, int object_id, int property_id){
+                return Storage.getPointer(class_id, object_id, property_id);
+        }
 
 
 

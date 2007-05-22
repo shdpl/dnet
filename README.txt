@@ -1,12 +1,20 @@
-Something you wouldn't guess:
-Run build_all.sh (or .bat) to build all examples and tests.
-You'll need BUD (build) utility for that on your path.
+== Quick start ==
 
+Run build_all.bat from main folder (you'll need bud) to build binaries 
+and generate api docs.
+
+Check tests folder for example code & binaries.
+Check api folder for docs.
+
+== Slow start ==
+
+Same as Quick +
 Building on linux is same as on Windows.
-
 Folders:
-	- tests (working code used during development and as examples)
-	- api (updated on each build_all.bat)
+	- tests (examples and code for development purpose)
+	- api (ddoc generated api)
 	- src (pure gold, baby)
 		- dnet
 		- dogslow
+
+

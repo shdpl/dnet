@@ -11,11 +11,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 
-module dnet.peer_queue;
+module peer_queue;
 
 import std.stdio;
 import std.string;
-import dnet.fifo_queue;
+import fifo_queue;
 
 
 protected const char UNRELIABLE = 255;

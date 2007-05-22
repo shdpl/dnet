@@ -13,7 +13,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 /**
 */
-module dnet.client;
+module dnet_client;
 
 import std.stdio;
 import std.string;
@@ -21,7 +21,8 @@ import std.c.time;
 import std.thread;
 import std.socket;
 import std.date;
-import dnet.peer_queue;
+
+import peer_queue;
 
 version(Windows) 
 	pragma(lib, "ws2_32.lib");
@@ -87,7 +88,10 @@ public class DnetClient {
 				if (IsConnected)
 					return true;
 				else
-					msleep(100);
+					version (Windows)
+						msleep(100);
+					else
+						usleep(100000);
 			}
 			return IsConnected;
 		}
@@ -149,7 +153,10 @@ public class DnetClient {
 				onDisconnect();
 			}
 
-			msleep(50);
+			version (Windows)
+				msleep(50);
+			else
+				usleep(50000);
 		}
 		return 0;
 	}

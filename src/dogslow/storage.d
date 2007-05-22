@@ -12,7 +12,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 /**
 */
-module dogslow.storage;
+module storage;
 
 private import std.stdio;
 private import std.string;
@@ -26,6 +26,7 @@ Convenient to cast to bytearray for network transfer.
 struct Atom {
 	void* ptr = null; /// pointer to data in memory
 	int size = 0; /// number of bytes in data
+	bool replicate = true; /// should this atom be replicated?
 }
 
 /**
@@ -187,6 +188,13 @@ class DogslowStorage {
 		setRaw(class_id, object_id, property_id, value.ptr, 12);
 	}
 
+        /**
+        */
+        public void setPointer(int class_id, int object_id, int property_id, void* value){
+		int address = cast(int)value;
+                setRaw(class_id, object_id, property_id, &address, 4);
+		Cache[class_id][object_id][property_id].replicate = false;
+        }
 
 
 	/**
@@ -264,6 +272,18 @@ class DogslowStorage {
 		else
 			return cast(float[])[0, 0, 0];
 	}
+
+        /**
+        */
+        public void* getPointer(int class_id, int object_id, int property_id){
+                Atom a = getRaw(class_id, object_id, property_id);
+
+                if (a.size == 4 && a.replicate == false)
+                        return cast(void*)( *(cast(int*)a.ptr) ); // same cast as int                
+                else
+                        return null;
+        }
+
 
 	unittest {
 

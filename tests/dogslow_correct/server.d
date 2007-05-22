@@ -1,16 +1,20 @@
-import dogslow.all;
+import dogslow_all;
 
 import std.stdio;
 import std.c.time;
-
+import std.c.stdlib;
 
 int main(){
 
-	DogslowServer c = new DogslowServer();
-	c.create(3333);
+	DogslowServer s = new DogslowServer();
+	s.create(3333);
 	while(1){
-		writefln("> %s %d", c.getString(0,0,0), c.getShort(0,0,1));
-		msleep(1000);
+		// set random value for property 1 of object id 1 of class 1
+		s.setInt(1,1,1,rand()%256, true);
+		version (Windows)
+			msleep(2000);
+		else
+			usleep(2000000);
 	}
 
 	return 0;
