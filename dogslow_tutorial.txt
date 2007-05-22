@@ -1,0 +1,105 @@
+Dogslow tutorial / help / manual / first and last resort
+
+
+== Why? ==
+
+Simple replication is not only about replication of various data or objects.
+It is about organizing those objects into logical structure too.
+You need to have quick and simple way to get all existing object at each moment.
+During dinamic process of game/program, your host (client or server) and/or any other host in network can 
+add/edit/delete any of those objects, so you very soon lose track of what is going on.
+And it is a bit more complex to track those changes.
+
+== How? ==
+
+Associative arrays are powerfull and simple.
+Dogslow replication model is all about one big associative array that has 3 keys.
+More on that below...
+
+== Example ==
+
+Lets say you are building racing game.
+Lets say you have two type of classess whose objects you ned to replicate - a "player" and a "car".
+And lets say you can have 1 to 16 players and 200 cars (you can walk around and drive car of your choice).
+And you want to have properties for player like "name" (string), "score" (int), and for car "model" (string), "position" (vector like float[3]).
+
+
+== Initialization ==
+
+First, you will need to define unique int id's for all classess, for quick access, so you dont need to remember numbers.
+
+	const int PLAYER = 1;
+	const int CAR = 2;
+
+Dogslow gives you max of 256 classess, id's ranging from 0 to 255
+
+Then, you need to define unique id's for properties (they must be unique for their class):
+
+	const int PLAYER_NAME = 0;
+	const int PLAYER_SCORE = 1;
+
+... and unique for car class:
+
+	const int CAR_MODEL = 0;
+	const int CAR_POSITION = 1;
+
+There can be 256 properties max per class.
+
+
+And for the end, you'll need to have unique int id for each object which is instance of class.
+Id's for that can range from 0 to 65535, giving you 256*256 possible objects per class.
+Of course, you can't define constant object id's now, becouse they are dinamic and added/deleted during the game.
+
+
+== The game process ==
+
+So, game server starts, client connects and we need to add first player. Process is same both on server and client.
+
+	int new_id = addObject(PLAYER);
+
+This method returns free object id for PLAYER class you can use now for new player.
+
+Let set players name and set score to zero:
+
+	setString(PLAYER, new_id, PLAYER_NAME, "John Doe", true);
+	setInt(PLAYER, new_id, PLAYER_SCORE, 0, true);
+
+Now here you see associative array stuff for the first time.
+Each property is of some type (string, int, float) and it is stored in something like 3 key assoc array.
+
+First key is class id.
+Second key is object id.
+Third is property id.
+
+Setting value is something like 
+
+	"cache[class_id][object_id][property_id] = new_value"
+
+...while reading would be other way around.
+
+Last bool argument at the end of setString(...) is telling we want to replicate value to other hosts. 
+We weant that, off course. That is whole thing in replication.
+
+Once you set first property, object of that class is created and replicated to other hosts.
+
+And lets say we are here on other host and we want to see what are players in game.
+We will do:
+
+	int[] all_ids = getObjects(PLAYER);
+
+This returns array of all existing object id's for class PLAYER.
+And if we would like to see names of all of them, that would be like:
+
+	foreach(int id; all_ids){
+		writefln( getString(PLAYER, id, PLAYER_NAME) );
+	}
+
+And to change name or any other var we would do the same setString(....) as when we were creating it. 
+And to delete some of them we would do:
+
+	deleteObject(PLAYER, 13);
+
+This would delete object with id 13 of class PLAYER. Bad luck for him.
+
+And that's it for basics. It doesn't matters if you are using DogslowServer or DogslowClient, methods are identical.
+

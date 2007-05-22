@@ -42,6 +42,12 @@ Contains string in form of "IPAddress:Port" of connected client.
 public const int ADDRESS = 0;
 
 
+/**
+Replication server.
+Comment:
+DogslowServer is descendant of DnetServer. 
+For how to create server and get data about clients, see DnetServer.
+*/
 public class DogslowServer : DnetServer {
 
 
@@ -112,15 +118,24 @@ public class DogslowServer : DnetServer {
 		}
 	}
 
+	/**
+	Returns next free object id for given class_id.
+	*/
 	public int addObject(int class_id){
 		// this is not safe, id is not unique
 		return rand() % (256*256);
 	}
 
+	/**
+	Returns list of id's of all existing object for given class.
+	*/
 	public int[] getObjects(int class_id){
 		return Storage.getObjects(class_id);
 	}
 
+	/**
+	Deletes object with given id for that class.
+	*/
 	public void deleteObject(int class_id, int object_id){
 		char[] buff;
 		buff = cast(char[])[DELETE, class_id, object_id/256, object_id%256];
@@ -128,6 +143,11 @@ public class DogslowServer : DnetServer {
 		Storage.del(class_id, object_id);
 	}
 
+	/**
+	Sets value for an property of object in given class. 
+	If parameter replicate is false then replication is skipped, thus saving property only as local change.
+	Other hosts won't know of change.
+	*/
 	public void setString(int class_id, int object_id, int property_id, char[] value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -137,6 +157,8 @@ public class DogslowServer : DnetServer {
 		Storage.setString(class_id, object_id, property_id, value);
 	}
 
+	/**
+	*/
 	public void setByte(int class_id, int object_id, int property_id, char value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -146,6 +168,8 @@ public class DogslowServer : DnetServer {
 		Storage.setByte(class_id, object_id, property_id, value);
 	}
 
+	/**
+	*/
 	public void setShort(int class_id, int object_id, int property_id, short value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -156,6 +180,8 @@ public class DogslowServer : DnetServer {
 		Storage.setShort(class_id, object_id, property_id, value);
 	}
 
+	/**
+	*/
 	public void setInt(int class_id, int object_id, int property_id, int value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -167,6 +193,8 @@ public class DogslowServer : DnetServer {
 	}
 
 
+	/**
+	*/
 	public void setFloat(int class_id, int object_id, int property_id, float value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -177,6 +205,8 @@ public class DogslowServer : DnetServer {
 		Storage.setFloat(class_id, object_id, property_id, value);
 	}
 
+	/**
+	*/
 	public void setVector3f(int class_id, int object_id, int property_id, float[3] value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -187,32 +217,56 @@ public class DogslowServer : DnetServer {
 		Storage.setVector3f(class_id, object_id, property_id, value);
 	}
 
-        public void setInt(int class_id, int object_id, int property_id, void* value){
+	/**
+	Stores pointer. Use to store reference to any type of object. 
+	This can not be replicated, pointer is allways stored as local value.
+	Comment:
+	Pointer points to place in memory. Data in memory of one host pointed by that address is not the same as data pointed by same address on other host. Replication of this type of variable is meaningless becouse of that.
+	*/
+        public void setPointer(int class_id, int object_id, int property_id, void* value){
                 Storage.setPointer(class_id, object_id, property_id, value);
         }
 
+	/**
+	Returns value of property for object of given class.
+	*/
 	public char[] getString(int class_id, int object_id, int property_id){
 		return Storage.getString(class_id, object_id, property_id);
 	}
+
+	/**
+	*/
 	public char getByte(int class_id, int object_id, int property_id){
 		return Storage.getByte(class_id, object_id, property_id);
 	}
+
+	/**
+	*/
 	public short getShort(int class_id, int object_id, int property_id){
 		return Storage.getShort(class_id, object_id, property_id);
 	}
 
+	/**
+	*/
 	public int getInt(int class_id, int object_id, int property_id){
 		return Storage.getInt(class_id, object_id, property_id);
 	}
 
+	/**
+	*/
 	public float getFloat(int class_id, int object_id, int property_id){
 		return Storage.getFloat(class_id, object_id, property_id);
 	}
 
+	/**
+	*/
 	public float[] getVector3f(int class_id, int object_id, int property_id){
 		return Storage.getVector3f(class_id, object_id, property_id);
 	}
 
+	/**
+	Returns locally stored pointer. Use cast to get original object type.
+	*/
         public void* getPointer(int class_id, int object_id, int property_id){
                 return Storage.getPointer(class_id, object_id, property_id);
         }

@@ -11,6 +11,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 /**
+Replication client. Methods are identical to one of DogslowServer. For detailed explanation look at that class.
+Comment:
+DogslowClient is descendant of DnetClient. 
+For how to connect to server look at DnetClient.
 */
 module dogslow_client;
 
@@ -29,16 +33,13 @@ const int UPLOADED = 2;
 const int DELETE = 3;
 
 /**
-Predefined class. It contains data about connected clients.
 */
 public const int CLIENT = 0;
 /**
-Predefined string property for CLIENT class. 
-Contains string in form of "IPAddress:Port" of connected client.
 */
 public const int ADDRESS = 0;
-
-
+/**
+*/
 public class DogslowClient : DnetClient {
 
 
@@ -55,6 +56,8 @@ public class DogslowClient : DnetClient {
         }
 
 
+	/**
+	*/
 	public bool connect(char[] address, ushort port){
 		writefln("connecting, geting id & uploading data from server...");
 		bool b = super.connect(address, port);
@@ -74,6 +77,8 @@ public class DogslowClient : DnetClient {
 		return false;
 	}
 
+	/**
+	*/
 	public int getClientId(){
 		return ClientId;
 	}
@@ -110,21 +115,29 @@ public class DogslowClient : DnetClient {
 		ClientId = -1;
 	}
 
+	/**
+	*/
 	public int addObject(int class_id){
 		// this is not safe, id is not unique
 		return rand() % (256*256);
 	}
 
+	/**
+	*/
 	public int[] getObjects(int class_id){
 		return Storage.getObjects(class_id);
 	}
 
+	/**
+	*/
 	public void deleteObject(int class_id, int object_id){
 		char[] buff;
 		buff = cast(char[])[DELETE, class_id, object_id/256, object_id%256];
 		send(buff, true);
 	}
 
+	/**
+	*/
 	public void setString(int class_id, int object_id, int property_id, char[] value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -135,6 +148,8 @@ public class DogslowClient : DnetClient {
 			Storage.setString(class_id, object_id, property_id, value);
 	}
 
+	/**
+	*/
 	public void setByte(int class_id, int object_id, int property_id, char value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -145,6 +160,8 @@ public class DogslowClient : DnetClient {
 			Storage.setByte(class_id, object_id, property_id, value);
 	}
 
+	/**
+	*/
 	public void setShort(int class_id, int object_id, int property_id, short value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -156,6 +173,8 @@ public class DogslowClient : DnetClient {
 			Storage.setShort(class_id, object_id, property_id, value);
 	}
 
+	/**
+	*/
 	public void setInt(int class_id, int object_id, int property_id, int value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -168,6 +187,8 @@ public class DogslowClient : DnetClient {
 	}
 
 
+	/**
+	*/
 	public void setFloat(int class_id, int object_id, int property_id, float value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -179,6 +200,8 @@ public class DogslowClient : DnetClient {
 			Storage.setFloat(class_id, object_id, property_id, value);
 	}
 
+	/**
+	*/
 	public void setVector3f(int class_id, int object_id, int property_id, float[3] value, bool replicate){
 		if (replicate){
 			char[] buff;
@@ -190,32 +213,51 @@ public class DogslowClient : DnetClient {
 			Storage.setVector3f(class_id, object_id, property_id, value);
 	}
 
-        public void setInt(int class_id, int object_id, int property_id, void* value){
+	/**
+	*/
+        public void setPointer(int class_id, int object_id, int property_id, void* value){
                 Storage.setPointer(class_id, object_id, property_id, value);
         }
 
+	/**
+	*/
 	public char[] getString(int class_id, int object_id, int property_id){
 		return Storage.getString(class_id, object_id, property_id);
 	}
+
+	/**
+	*/
 	public char getByte(int class_id, int object_id, int property_id){
 		return Storage.getByte(class_id, object_id, property_id);
 	}
+
+
+	/**
+	*/
 	public short getShort(int class_id, int object_id, int property_id){
 		return Storage.getShort(class_id, object_id, property_id);
 	}
 
+	/**
+	*/
 	public int getInt(int class_id, int object_id, int property_id){
 		return Storage.getInt(class_id, object_id, property_id);
 	}
 
+	/**
+	*/
 	public float getFloat(int class_id, int object_id, int property_id){
 		return Storage.getFloat(class_id, object_id, property_id);
 	}
 
+	/**
+	*/
 	public float[] getVector3f(int class_id, int object_id, int property_id){
 		return Storage.getVector3f(class_id, object_id, property_id);
 	}
 
+	/**
+	*/
         public void* getPointer(int class_id, int object_id, int property_id){
                 return Storage.getPointer(class_id, object_id, property_id);
         }

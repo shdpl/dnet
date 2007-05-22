@@ -9,12 +9,18 @@ Check api folder for docs.
 == Slow start ==
 
 Same as Quick +
-Building on linux is same as on Windows.
+Building on linux is same as on Windows. 
+If you use linux then you are probably qualified to compile all this withouth script.
+
 Folders:
-	- tests (examples and code for development purpose)
+	- examples (examples, tests, code for development purpose)
 	- api (ddoc generated api)
 	- src (pure gold, baby)
 		- dnet
 		- dogslow
 
 
+== Help !!!!! ==
+
+dnet low layer is simple enough. Look at api folder.
+dogslow layer is bit more complicated. That is why you have tutorial included.
