@@ -10,43 +10,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
-module dnet_new.buffer;
+module dnet.dnet;
 
-
-/**
-A fancy name for byte buffer or char[]
-*/
-public class DnetBuffer {
-
-
-	private {
-		char[] Buff;
-		uint Length = 0;
-	}
-
-	this(){
-	}
-
-	this(char[] buff){
-		Buff = buff;
-		Length = buff.length;
-	}
-
-	public uint length(){
-		return Buff.length;
-	}
-
-	//public void put(char value){}
-	//public void put(short value){}
-	//public void put(ushort value){}
-	//public void put(int value){}
-	//public void put(uint value){}
-	//public void put(char[] value){}
-	//public int readInt(uint pos){}
-	//public uint readUint(uint pos){}
-	
-	public char[] getBuffer(){
-		return Buff[0..Length].dup;
-	}
-
+public {
+	import dnet.utils;
+	import dnet.socket;
+	import dnet.fifo;
+	import dnet.buffer;
+	import dnet.connection;
+	import dnet.collection;
 }

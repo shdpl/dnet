@@ -10,27 +10,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
+module dnet.utils;
+
+
+import std.c.time;
+import std.date;
+
 /**
-Public classess you will use:
-<ul>
-<li><a href="dnet_server.html">DnetServer</a>
-<li><a href="dnet_client.html">DnetClient</a>
-</ul>
-Private classess you don't need to know about:
-<ul>
-<li><a href="peer_queue.html">PeerQueue</a>
-<li><a href="fifo_queue.html">FifoQueue</a>
-</ul>
-Comment:
-By D's definition, char is "unsigned 8 bit". 
-So char[] data or buffers are bytestreams, with char used as ubyte type.
-
-TODO:
-Make client/server use time window of 50ms for sending (not more frequent than 20 updates per sec)
-& PeerQueue group packets into ~ 100 bytes chunks for optimal size and frequency of sending.
+Sleep for number of miliseconds.
 */
+public void sleep(uint miliseconds){
+	version(Windows)
+		msleep(miliseconds);
+	else
+		usleep(miliseconds * 1000);
+}
 
-module dnet_all;
-
-public import dnet_client;
-public import dnet_server;
+/**
+Returns number of miliseconds passed since last call of this func.
+*/
+public uint time(){
+	static long t = 0;
+	if (t == 0)
+		t = getUTCtime();
+	long old = t;
+	t = getUTCtime();
+	return cast(uint) ( (t - old) / (TicksPerSecond / 1000) );
+	//return 0;
+}

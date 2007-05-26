@@ -10,21 +10,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
-module dnet_new.socket;
+module dnet.socket;
 
 
 import std.socket;
 import std.c.time;
+version (Windows)
+	pragma(lib, "ws2_32.lib");
 
-import dnet_new.buffer;
+import dnet.buffer;
 
-
-public void sleep(uint miliseconds){
-	version(Windows)
-		msleep(miliseconds);
-	else
-		usleep(miliseconds * 1000);
-}
 
 /**
 */
@@ -49,8 +44,8 @@ public class DnetAddress {
                 Address = new InternetAddress( ip, port );
         }
 
-	public int opCmp(DnetAddress address){
-		if (Address == address.Address)
+	int opEquals( DnetAddress address ) {
+		if ( address.Address.addr != Address.addr || address.Address.port != Address.port )
 			return 0;
 		else
 			return 1;

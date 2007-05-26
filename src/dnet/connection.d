@@ -10,17 +10,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
-module dnet_new.connection;
+module dnet.connection;
 
-import std.stdio;
-
-
-import dnet_new.socket;
-import dnet_new.buffer;
-import dnet_new.fifo;
+import dnet.socket;
+import dnet.fifo;
+import dnet.buffer;
 
 /**
-Simple name for two-endpoint connection, where one is allways local address.
+Simple name for two-end points connection, where one is allways local address.
 */
 public class DnetConnection {
 
@@ -59,8 +56,7 @@ public class DnetConnection {
 	Reads next received data.
 	*/
 	public DnetBuffer receive(){
-		char[] tmp = ReceiveQueue.get();
-		return new DnetBuffer(tmp);
+		return new DnetBuffer(ReceiveQueue.get());
 	}
 
 	/**
@@ -72,7 +68,7 @@ public class DnetConnection {
 		DnetAddress addr;
 		int size = Socket.receiveFrom(buff, addr);
 		// todo - should check is received from RemoteAddress
-		while(size > 0){
+		while(size > 0 /* && addr == RemoteAddress*/){
 			ReceiveQueue.put(buff.getBuffer());
 			size = Socket.receiveFrom(buff, addr);
 		}

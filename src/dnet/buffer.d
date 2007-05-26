@@ -10,23 +10,43 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
+module dnet.buffer;
+
+
 /**
-Public classess you will use:
-<ul>
-<li><a href="dogslow_server.html">DogslowServer</a>
-<li><a href="dogslow_client.html">DogslowClient</a>
-</ul>
-Private classess you don't need to know about:
-<ul>
-<li><a href="storage.html">DogslowStorage</a>
-</ul>
-Comment:
-By D's definition, char is "unsigned 8 bit". 
-So char[] data or buffers are bytestreams, with char used as ubyte type.
-
+A fancy name for byte buffer or char[]
 */
+public class DnetBuffer {
 
-module dogslow_all;
 
-public import dogslow_client;
-public import dogslow_server;
+	private {
+		char[] Buff;
+		uint Length = 0;
+	}
+
+	this(){
+	}
+
+	this(char[] buff){
+		Buff = buff;
+		Length = buff.length;
+	}
+
+	public uint length(){
+		return Buff.length;
+	}
+
+	//public void put(char value){}
+	//public void put(short value){}
+	//public void put(ushort value){}
+	//public void put(int value){}
+	//public void put(uint value){}
+	//public void put(char[] value){}
+	//public int readInt(uint pos){}
+	//public uint readUint(uint pos){}
+	
+	public char[] getBuffer(){
+		return Buff[0..Length].dup;
+	}
+
+}

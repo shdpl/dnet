@@ -10,26 +10,25 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
-module dnet_new.collection;
+module dnet.collection;
 
-import std.stdio;
+import dnet.socket;
+import dnet.connection;
+import dnet.fifo;
+import dnet.buffer;
 
-
-import dnet_new.socket;
-import dnet_new.buffer;
-import dnet_new.fifo;
-import dnet_new.connection;
 
 /**
-A kind of a funny name for a server - or in other words a collection of connections.
+A kind of a funny name for a server - or, in other words, a collection of connections.
+
+TODO:
+When client connects new connection is spawned, thus client now gets answer not from servers port but from some new port.
 */
 public class DnetCollection {
 
 	private {
 		DnetSocket Socket;
-
 		DnetConnection[char[]] Connections;
-
 		DnetFifo ReceiveQueue;
 	}
 

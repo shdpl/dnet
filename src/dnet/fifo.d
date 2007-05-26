@@ -11,13 +11,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 
-module fifo_queue;
+module dnet.fifo;
 
 private import std.stdio;
 private import std.string;
 
 /**
- Auto resizeable FIFO (First In First Out) container that stores char[] type.
+ Auto resizeable FIFO (First In First Out) container that stores char[] type of unlimited length.
  Overflow shouldn't happen becouse capacity will grow. 
  Underflow is handled by returning empty string.
  Capacity can only grow and unused data is overwritten, not cleaned up.
@@ -26,7 +26,7 @@ private import std.string;
   if canister could shrink unneededcapacity , 
   free unused indexes to reduce memory load
 */
-public class FifoQueue {
+public class DnetFifo {
 	private uint Capacity;
 	private char[][] Buff;
 	private uint First;
@@ -100,7 +100,7 @@ public class FifoQueue {
 	}
 
 	unittest {
-		FifoQueue q = new FifoQueue();
+		DnetFifo q = new DnetFifo();
 		assert(q.get() == "");
 		assert(q.length == 0);
 		q.put("a");
@@ -117,7 +117,7 @@ public class FifoQueue {
 			q.put("a");
                         assert(q.get() == "a");
                 }
-		writefln("FifoQueue unittest PASS");
+		writefln("DnetFifo unittest PASS");
 	}
 
 }
