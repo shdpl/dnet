@@ -10,7 +10,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
-module dnet_new.connection;
+module dnet_new.collection;
 
 import std.stdio;
 
@@ -18,41 +18,49 @@ import std.stdio;
 import dnet_new.socket;
 import dnet_new.buffer;
 import dnet_new.fifo;
+import dnet_new.connection;
 
 /**
-Simple name for two-endpoint connection, where one is allways local address.
+A kind of a funny name for a server - or in other words a collection of connections.
 */
-public class DnetConnection {
+public class DnetCollection {
 
 	private {
 		DnetSocket Socket;
-		DnetAddress RemoteAddress;
 
-		DnetFifo SendQueue;
+		DnetConnection[char[]] Connections;
+
 		DnetFifo ReceiveQueue;
 	}
 
 	/**
 	
 	*/
-	this(DnetAddress remote_address){
+	this(){
 		Socket = new DnetSocket();
-		RemoteAddress = remote_address;
 
-		SendQueue = new DnetFifo();
 		ReceiveQueue = new DnetFifo();
+	}
+
+	public void bind(DnetAddress address){
+		Socket.bind(address);
 	}
 
 	public DnetAddress getLocalAddress(){
 		return Socket.getLocalAddress();
 	}
-	public DnetAddress getRemoteAddress(){
-		return RemoteAddress;
+
+	public void add(DnetAddress address){
+		Connections[address.toString()] = new DnetConnection(address);
 	}
 
+	public DnetConnection[char[]] getAll(){
+		return Connections;
+	}
 
-	public void send(DnetBuffer buff){
-		SendQueue.put(buff.getBuffer());
+	public void broadcast(DnetBuffer buff){
+		foreach(DnetConnection c; Connections)
+			c.send(buff);
 	}
 
 	/**
@@ -67,30 +75,24 @@ public class DnetConnection {
 	Sends and receives data.
 	*/
 	public void emit(){
+		// todo - reorganize this part. each connection receives on emit()
+		// if collection listens here first then.... oh man, it is just so complicated...
+
 		// receive
 		DnetBuffer buff;
 		DnetAddress addr;
 		int size = Socket.receiveFrom(buff, addr);
-		// todo - should check is received from RemoteAddress
 		while(size > 0){
 			ReceiveQueue.put(buff.getBuffer());
+			if ((addr.toString() in Connections) == null)
+				add(addr);
 			size = Socket.receiveFrom(buff, addr);
 		}
-		
-		// transmit
-		char[] tmp = SendQueue.get();
-		while (tmp.length > 0){
-			Socket.sendTo(new DnetBuffer(tmp), RemoteAddress);
-			tmp = SendQueue.get();
-		}
-		
-	}
 
-	/**
-	Time in miliseconds since last receive.
-	*/
-	public uint lastReceive(){
-		return 0; // todo
+		// send
+		foreach(DnetConnection c; Connections)
+			c.emit();
+	
 	}
 
 }

@@ -10,10 +10,58 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
-module dnet.socket;
+module dnet_new.socket;
 
 
 import std.socket;
+import std.c.time;
+
+import dnet_new.buffer;
+
+
+public void sleep(uint miliseconds){
+	version(Windows)
+		msleep(miliseconds);
+	else
+		usleep(miliseconds * 1000);
+}
+
+/**
+*/
+public class DnetAddress {
+
+        private {
+                InternetAddress Address;
+        }
+
+        /**
+        Any local address.
+        */
+        this(ushort port){
+                Address = new InternetAddress( port );
+        }
+
+        this(uint ip, ushort port){
+                Address = new InternetAddress( ip, port );
+        }
+
+        this(char[] ip, ushort port){
+                Address = new InternetAddress( ip, port );
+        }
+
+	public int opCmp(DnetAddress address){
+		if (Address == address.Address)
+			return 0;
+		else
+			return 1;
+	}
+
+        public char[] toString(){
+                return Address.toString();
+        }
+}
+
+
 
 /**
 */
@@ -33,7 +81,8 @@ public class DnetSocket {
 	}
 
 	public DnetAddress getLocalAddress(){
-		return new DnetAddress( Socket.localAddr().addr(), Socket.localAddr().port() );
+		InternetAddress a = cast(InternetAddress)Socket.localAddress();
+		return new DnetAddress( a.addr(), a.port() );
 	}
 
 	public void sendTo(DnetBuffer buff, DnetAddress address){
@@ -42,11 +91,11 @@ public class DnetSocket {
 
 	public int receiveFrom(out DnetBuffer buff, out DnetAddress address){
 		char[1024] tmp;
-		InternetAddress addr;
+		Address addr;
 		int size = Socket.receiveFrom(tmp, addr);
 		if (size > 0)
 			buff = new DnetBuffer(tmp[0..size].dup);
-		address = new DnetAddress(addr.addr(), addr.port());
+		address = new DnetAddress((cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port());
 		return size;
 	}
 

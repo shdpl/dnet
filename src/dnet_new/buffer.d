@@ -10,10 +10,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 */
 
-module dnet.socket;
+module dnet_new.buffer;
 
-
-import std.socket;
 
 /**
 A fancy name for byte buffer or char[]
@@ -32,6 +30,10 @@ public class DnetBuffer {
 	this(char[] buff){
 		Buff = buff;
 		Length = buff.length;
+	}
+
+	public uint length(){
+		return Buff.length;
 	}
 
 	//public void put(char value){}

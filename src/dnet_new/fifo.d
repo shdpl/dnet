@@ -11,7 +11,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 */
 
 
-module dnet.fifo;
+module dnet_new.fifo;
 
 private import std.stdio;
 private import std.string;
