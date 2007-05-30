@@ -12,7 +12,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 module dnet.socket;
 
-
+import std.stdio;
 import std.socket;
 import std.c.time;
 version (Windows)
@@ -81,6 +81,11 @@ public class DnetSocket {
 	}
 
 	public void sendTo(DnetBuffer buff, DnetAddress address){
+		writefln("Socket %s sends to %s data: [%s]", 
+			getLocalAddress.toString(), 
+			address.toString(), 
+			buff.getBuffer()
+		);
 		Socket.sendTo(buff.getBuffer(), address.Address);
 	}
 
@@ -91,6 +96,14 @@ public class DnetSocket {
 		if (size > 0)
 			buff = new DnetBuffer(tmp[0..size].dup);
 		address = new DnetAddress((cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port());
+
+		if (size > 0){
+	                writefln("Socket %s receives from %s data: [%s]",
+        	                getLocalAddress.toString(),
+                	        address.toString(),
+                        	buff.getBuffer()
+	                );
+		}
 		return size;
 	}
 

@@ -19,10 +19,13 @@ import dnet.buffer;
 
 
 /**
-A kind of a funny name for a server - or, in other words, a collection of connections.
+A collection of connections.
+This can be a server if you bind socket and listen 
+or it can be a client connected to multiple points.
 
 TODO:
-When client connects new connection is spawned, thus client now gets answer not from servers port but from some new port.
+When client connects new connection is spawned, 
+thus client now gets answer not from port requested but from some new port.
 */
 public class DnetCollection {
 
@@ -37,10 +40,12 @@ public class DnetCollection {
 	*/
 	this(){
 		Socket = new DnetSocket();
-
-		ReceiveQueue = new DnetFifo();
+		ReceiveQueue = new DnetFifo();		
 	}
 
+	/**
+	Make this collection act as a incoming server.
+	*/
 	public void bind(DnetAddress address){
 		Socket.bind(address);
 	}
@@ -50,7 +55,9 @@ public class DnetCollection {
 	}
 
 	public void add(DnetAddress address){
-		Connections[address.toString()] = new DnetConnection(address);
+		DnetConnection c = new DnetConnection();
+		c.connectToPoint(address);
+		Connections[address.toString()] = c;
 	}
 
 	public DnetConnection[char[]] getAll(){
@@ -74,23 +81,36 @@ public class DnetCollection {
 	Sends and receives data.
 	*/
 	public void emit(){
-		// todo - reorganize this part. each connection receives on emit()
-		// if collection listens here first then.... oh man, it is just so complicated...
-
-		// receive
+		// this should handle only new requests that are redirected to new socket
+		// all established connections are spawned on other socket
 		DnetBuffer buff;
 		DnetAddress addr;
 		int size = Socket.receiveFrom(buff, addr);
 		while(size > 0){
-			ReceiveQueue.put(buff.getBuffer());
-			if ((addr.toString() in Connections) == null)
+			if ((addr.toString() in Connections) == null){
 				add(addr);
+				// send back secret
+				Connections[addr.toString()].send(buff);
+			}
 			size = Socket.receiveFrom(buff, addr);
 		}
 
-		// send
-		foreach(DnetConnection c; Connections)
-			c.emit();
+		// send & receive for each connection
+		DnetBuffer tmp;
+		foreach(DnetConnection c; Connections){
+			c.emit(); // send & receive
+			// move received data from connection's internal buffer 
+			// to collections buffer
+			// this is not smartest way and it is slow for sake of cleaness
+			buff = c.receive();
+			while (buff.length() > 0){
+				ReceiveQueue.put(buff.getBuffer());
+				tmp = c.receive();
+			}
+			
+		}
+
+		
 	
 	}
 

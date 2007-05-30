@@ -3,8 +3,12 @@ import std.stdio;
 
 int main() {
 
-	DnetConnection c = new DnetConnection(new DnetAddress("localhost", 3333));
-	c.send(new DnetBuffer("Hello server, please flood me!"));
+	DnetConnection c = new DnetConnection();
+	c.connectToServer(
+		//new DnetAddress(4567),
+		new DnetAddress("localhost", 3333)
+	);
+	//c.send(new DnetBuffer("Hello server, please flood me!"));
 
 	uint t = 0;
 	int i = 0;
@@ -20,7 +24,7 @@ int main() {
 			i = 0;
 		}
 
-		sleep(1);
+		sleep(1000);
 	}
 
 	return 0;

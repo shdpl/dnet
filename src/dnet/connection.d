@@ -12,33 +12,70 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 module dnet.connection;
 
+import std.random;
+import std.string;
+
 import dnet.socket;
 import dnet.fifo;
 import dnet.buffer;
 
 /**
 Simple name for two-end points connection, where one is allways local address.
+Remote addresse's port *might* not be the same after receiving response.
+It is becouse other side might spawn new socket to communicate with calling side.
 */
 public class DnetConnection {
 
 	private {
 		DnetSocket Socket;
 		DnetAddress RemoteAddress;
-
 		DnetFifo SendQueue;
 		DnetFifo ReceiveQueue;
+		bool Connected;
+		char[] Secret;
+	}
+
+	this(){
+                Socket = new DnetSocket();
+                SendQueue = new DnetFifo();
+                ReceiveQueue = new DnetFifo();
+        }
+
+
+	/**
+	Connect to server (listening collection).
+	Will use handshaking to get remote_address from new spawned socket on server side.
+	*/
+        public void connectToServer(DnetAddress remote_address){
+                RemoteAddress = remote_address;
+                // handshaking protocol
+                // send packet to identify, expect same reply from real remote address
+                Secret = format("%d", rand());
+                send(new DnetBuffer(Secret));
+                //send(new DnetBuffer(RemoteAddress.toString()));
+                //send(new DnetBuffer(RemoteAddress.toString()));
+                Connected = false;
+
+	}
+	public void connectToServer(DnetAddress local_address, DnetAddress remote_address){
+		Socket.bind(local_address);
+		connectToServer(remote_address);
 	}
 
 	/**
-	
+	Point to point connecting.
 	*/
-	this(DnetAddress remote_address){
-		Socket = new DnetSocket();
-		RemoteAddress = remote_address;
+        public void connectToPoint(DnetAddress remote_address){
+                RemoteAddress = remote_address;
+                Connected = true;
+        }
 
-		SendQueue = new DnetFifo();
-		ReceiveQueue = new DnetFifo();
+	public void connectToPoint(DnetAddress local_address, DnetAddress remote_address){
+		Socket.bind(local_address);
+		connectToPoint(remote_address);
 	}
+
+
 
 	public DnetAddress getLocalAddress(){
 		return Socket.getLocalAddress();
@@ -60,7 +97,7 @@ public class DnetConnection {
 	}
 
 	/**
-	Sends and receives data.
+	Sends and receives data to other end.
 	*/
 	public void emit(){
 		// receive
@@ -68,8 +105,16 @@ public class DnetConnection {
 		DnetAddress addr;
 		int size = Socket.receiveFrom(buff, addr);
 		// todo - should check is received from RemoteAddress
-		while(size > 0 /* && addr == RemoteAddress*/){
-			ReceiveQueue.put(buff.getBuffer());
+		while(size > 0){
+			// connecting to server
+			// untill connected, reply with secret is from remote address
+			if (Connected == false && buff.getBuffer() == Secret){
+				RemoteAddress = addr;
+				Connected = true;
+			}
+			if (Connected == true && addr == RemoteAddress){
+				ReceiveQueue.put(buff.getBuffer());
+			}
 			size = Socket.receiveFrom(buff, addr);
 		}
 		
