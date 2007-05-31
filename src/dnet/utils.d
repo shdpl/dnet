@@ -19,7 +19,7 @@ import std.date;
 /**
 Sleep for number of miliseconds.
 */
-public void sleep(uint miliseconds){
+public void DnetSleep(uint miliseconds){
 	version(Windows)
 		msleep(miliseconds);
 	else
@@ -29,7 +29,7 @@ public void sleep(uint miliseconds){
 /**
 Returns number of miliseconds passed since last call of this func.
 */
-public uint time(){
+public uint DnetTime(){
 	static long t = 0;
 	if (t == 0)
 		t = getUTCtime();

@@ -14,6 +14,7 @@ module dnet.connection;
 
 import std.random;
 import std.string;
+import std.date;
 
 import dnet.socket;
 import dnet.fifo;
@@ -31,6 +32,7 @@ public class DnetConnection {
 		DnetAddress RemoteAddress;
 		DnetFifo SendQueue;
 		DnetFifo ReceiveQueue;
+		long LastReceive;
 		bool Connected;
 		char[] Secret;
 	}
@@ -39,6 +41,7 @@ public class DnetConnection {
                 Socket = new DnetSocket();
                 SendQueue = new DnetFifo();
                 ReceiveQueue = new DnetFifo();
+		LastReceive = getUTCtime();
         }
 
 
@@ -76,7 +79,6 @@ public class DnetConnection {
 	}
 
 
-
 	public DnetAddress getLocalAddress(){
 		return Socket.getLocalAddress();
 	}
@@ -106,6 +108,8 @@ public class DnetConnection {
 		int size = Socket.receiveFrom(buff, addr);
 		// todo - should check is received from RemoteAddress
 		while(size > 0){
+			LastReceive = getUTCtime();
+
 			// connecting to server
 			// untill connected, reply with secret is from remote address
 			if (Connected == false && buff.getBuffer() == Secret){
@@ -128,10 +132,10 @@ public class DnetConnection {
 	}
 
 	/**
-	Time in miliseconds since last receive.
+	Time in miliseconds since last receive event.
 	*/
 	public uint lastReceive(){
-		return 0; // todo
+		return ( (getUTCtime() - LastReceive) / TicksPerSecond ) * 1000;
 	}
 
 }

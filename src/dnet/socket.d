@@ -81,11 +81,11 @@ public class DnetSocket {
 	}
 
 	public void sendTo(DnetBuffer buff, DnetAddress address){
-		writefln("Socket %s sends to %s data: [%s]", 
-			getLocalAddress.toString(), 
-			address.toString(), 
-			buff.getBuffer()
-		);
+		//writefln("Socket %s sends to %s data: [%s]", 
+		//	getLocalAddress.toString(), 
+		//	address.toString(), 
+		//	buff.getBuffer()
+		//);
 		Socket.sendTo(buff.getBuffer(), address.Address);
 	}
 
@@ -97,13 +97,13 @@ public class DnetSocket {
 			buff = new DnetBuffer(tmp[0..size].dup);
 		address = new DnetAddress((cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port());
 
-		if (size > 0){
-	                writefln("Socket %s receives from %s data: [%s]",
-        	                getLocalAddress.toString(),
-                	        address.toString(),
-                        	buff.getBuffer()
-	                );
-		}
+		//if (size > 0){
+	        //        writefln("Socket %s receives from %s data: [%s]",
+        	//                getLocalAddress.toString(),
+                //	        address.toString(),
+                //        	buff.getBuffer()
+	        //        );
+		//}
 		return size;
 	}
 
