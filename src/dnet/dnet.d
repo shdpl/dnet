@@ -18,5 +18,4 @@ public {
 	import dnet.fifo;
 	import dnet.buffer;
 	import dnet.connection;
-	import dnet.collection;
 }

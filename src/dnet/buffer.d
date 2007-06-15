@@ -45,8 +45,12 @@ public class DnetBuffer {
 	//public int readInt(uint pos){}
 	//public uint readUint(uint pos){}
 	
-	public char[] getBuffer(){
+	public char[] dup(){
 		return Buff[0..Length].dup;
+	}
+
+	public char[] buffer() {
+		return Buff[0..Length];
 	}
 
 }

@@ -15,8 +15,10 @@ module dnet.socket;
 import std.stdio;
 import std.socket;
 import std.c.time;
-version (Windows)
+version (Windows) {
 	pragma(lib, "ws2_32.lib");
+	pragma(lib, "wsock32.lib");
+}
 
 import dnet.buffer;
 
@@ -84,13 +86,13 @@ public class DnetSocket {
 		//writefln("Socket %s sends to %s data: [%s]", 
 		//	getLocalAddress.toString(), 
 		//	address.toString(), 
-		//	buff.getBuffer()
+		//	buff.buffer()
 		//);
-		Socket.sendTo(buff.getBuffer(), address.Address);
+		Socket.sendTo(buff.dup, address.Address);
 	}
 
 	public int receiveFrom(out DnetBuffer buff, out DnetAddress address){
-		char[1024] tmp;
+		char[1400] tmp;
 		Address addr;
 		int size = Socket.receiveFrom(tmp, addr);
 		if (size > 0)

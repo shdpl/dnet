@@ -4,15 +4,16 @@ import std.stdio;
 int main() {
 
 	DnetConnection c = new DnetConnection();
-	c.connectToServer( new DnetAddress("localhost", 3333));
-	c.send(new DnetBuffer("Hello server, please flood me!"));
+	c.connectToServer( new DnetAddress( "localhost", 3333) );
 
 	uint t = 0;
 	int i = 0;
 	while(true){
+		c.send( "Hiya!", false );
 		c.emit();
-		if (c.receive().length() > 0)
+		if (c.receive().length() > 0) {
 			i++;
+		}
 		t += DnetTime();
 
 		if (t > 1000){
