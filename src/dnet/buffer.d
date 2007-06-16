@@ -20,8 +20,8 @@ public class DnetBuffer {
 
 
 	private {
-		char[] Buff;
-		uint Length = 0;
+		char[]	Buff;
+		uint	Length = 0;
 	}
 
 	this(){
@@ -44,7 +44,7 @@ public class DnetBuffer {
 	//public void put(char[] value){}
 	//public int readInt(uint pos){}
 	//public uint readUint(uint pos){}
-	
+
 	public char[] dup(){
 		return Buff[0..Length].dup;
 	}

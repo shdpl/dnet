@@ -4,7 +4,7 @@ import std.stdio;
 int main() {
 
 	DnetConnection c = new DnetConnection();
-	c.connectToServer( new DnetAddress( "localhost", 3333) );
+	c.connectToServer( new DnetAddress( "localhost", 3333 ) );
 
 	uint t = 0;
 	int i = 0;

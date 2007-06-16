@@ -46,6 +46,14 @@ public class DnetAddress {
                 Address = new InternetAddress( ip, port );
         }
 
+	char[]	toAddrString() {
+		return Address.toAddrString();
+	}
+
+	ushort port() {
+		return Address.port;
+	}
+
 	int opEquals( DnetAddress address ) {
 		if ( address.Address.addr != Address.addr || address.Address.port != Address.port )
 			return 0;
@@ -82,13 +90,13 @@ public class DnetSocket {
 		return new DnetAddress( a.addr(), a.port() );
 	}
 
-	public void sendTo(DnetBuffer buff, DnetAddress address){
+	public void sendTo(void[] buff, DnetAddress address){
 		//writefln("Socket %s sends to %s data: [%s]", 
 		//	getLocalAddress.toString(), 
 		//	address.toString(), 
 		//	buff.buffer()
 		//);
-		Socket.sendTo(buff.dup, address.Address);
+		Socket.sendTo(buff, address.Address);
 	}
 
 	public int receiveFrom(out DnetBuffer buff, out DnetAddress address){
