@@ -103,8 +103,10 @@ public class DnetSocket {
 		char[1400] tmp;
 		Address addr;
 		int size = Socket.receiveFrom(tmp, addr);
-		if (size > 0)
-			buff = new DnetBuffer(tmp[0..size].dup);
+		if (size > 0) {
+			buff = new DnetBuffer( new char[size] );
+			buff.putData( tmp[0..size] );
+		}
 		address = new DnetAddress((cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port());
 
 		//if (size > 0){

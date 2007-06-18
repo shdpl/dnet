@@ -11,7 +11,7 @@ int main() {
 	while(true){
 		c.send( "Hiya!", false );
 		c.emit();
-		if (c.receive().length() > 0) {
+		if (c.receive().length > 0) {
 			i++;
 		}
 		t += DnetTime();

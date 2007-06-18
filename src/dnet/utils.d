@@ -38,3 +38,100 @@ public uint DnetTime(){
 	return cast(uint) ( (t - old) / (TicksPerSecond / 1000) );
 	//return 0;
 }
+
+/*
+Splits s into tokens.
+*/
+package char[][] splitIntoTokens( char[] s ) {
+	int			pos;
+	char[][]	tokens;
+
+	bool skipWhitespace() {
+		while ( true ) {
+			// skip whitespace
+			while ( pos < s.length && s[pos] <= ' ' ) {
+				pos++;
+			}
+			if ( pos == s.length ) {
+				pos = -1;
+				return false;
+			}
+
+			// an actual token
+			break;
+		}
+
+		return true;
+	}
+
+	void readGeneric( ref char[] token ) {
+		int		start = pos;
+
+		while ( pos < s.length ) {
+			if ( s[pos] <= ' ' ) {
+				break;
+			}
+
+			pos++;
+		}
+
+		token = s[start..pos];
+	}
+
+	bool readString( ref char[] token ) {
+		int		start, end;
+
+		pos++;
+		start = pos;
+		while ( true ) {
+			if ( pos == s.length ) {
+				// missing trailing quote
+				return false;
+			}
+
+			if ( s[pos] == '\"' ) {
+				break;
+			}
+
+			pos++;
+		}
+
+		token = s[start..pos];
+		pos++;	// step over the trailing quote
+
+		return true;
+	}
+
+	// read all the tokens
+	while ( true ) {
+		if ( !skipWhitespace() ) {
+			break;
+		}
+
+		char[]	token;
+
+		if ( s[pos] == '"' ) {
+			if ( !readString( token ) ) {
+				break;
+			}
+		}
+		else {
+			readGeneric( token );
+		}
+
+		tokens ~= token;
+	}
+
+	return tokens;
+}
+
+unittest {
+	char[]	string = "lengthy token sequence \"another lengthy token sequence\"";
+	char[][]	tokens = string.splitIntoTokens();
+
+	assert( tokens.length == 4 );
+	assert( tokens[0] == "lengthy" );
+	assert( tokens[1] == "token" );
+	assert( tokens[2] == "sequence" );
+	assert( tokens[3] == "another lengthy token sequence" );
+}

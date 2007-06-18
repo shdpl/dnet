@@ -16,41 +16,112 @@ module dnet.buffer;
 /**
 A fancy name for byte buffer or char[]
 */
-public class DnetBuffer {
-
-
+package class DnetBuffer {
 	private {
-		char[]	Buff;
-		uint	Length = 0;
+		char[]	buffer;
+		size_t	bytesWritten;
+		size_t	readingPos;
 	}
 
-	this(){
+	this( char[] theBuffer ) {
+		buffer = theBuffer;
+		bytesWritten = 0;
 	}
 
-	this(char[] buff){
-		Buff = buff;
-		Length = buff.length;
+	/// Sets reading counter to zero.
+	public void beginReading( size_t start = 0 ) {
+		readingPos = start;
 	}
 
-	public uint length(){
-		return Buff.length;
+	/// Returns the number of bytes written.
+	public uint length() {
+		return bytesWritten;
 	}
 
-	//public void put(char value){}
-	//public void put(short value){}
-	//public void put(ushort value){}
-	//public void put(int value){}
-	//public void put(uint value){}
-	//public void put(char[] value){}
-	//public int readInt(uint pos){}
-	//public uint readUint(uint pos){}
+	/// Returns the overall size of the buffer.
+	public size_t size() {
+		return buffer.length;
+	}
+
+	/// Returns the number of bytes read.
+	public size_t bytesRead() {
+		return readingPos;
+	}
+
+	private void writeBytes( char[] bytes ) {
+		if ( bytesWritten + bytes.length > buffer.length ) {
+			// overflow!
+			if ( bytes.length > buffer.length ) {
+				return;
+			}
+			bytesWritten = 0;
+		}
+
+		buffer[bytesWritten..bytesWritten+bytes.length] = bytes[];
+		bytesWritten += bytes.length;
+	}
+
+	private char[] readBytes( int numBytes ) {
+		if ( readingPos + numBytes > bytesWritten ) {
+			// underflow!
+			return null;
+		}
+
+		char[] bytes = buffer[readingPos..readingPos+numBytes];
+		readingPos += numBytes;
+
+		return bytes;
+	}
+
+	public void putData( char[] data ) {
+		writeBytes( data );
+	}
+
+	public void putUbyte( ubyte value ) {
+		char[1]		data = value;
+		writeBytes( data );
+	}
+
+	public void putInt( int value ) {
+		char[4]	data;
+
+		data[0] = value & 0xFF;
+		data[1] = ( value >> 8 ) & 0xFF;
+		data[2] = ( value >> 16 ) & 0xFF;
+		data[3] = value >> 24; 
+
+		writeBytes( data );
+	}
+
+	public void putUshort( ushort value ) {
+		char[2]	data;
+
+		data[0] = value & 0xFF;
+		data[1] = value >> 8;
+
+		writeBytes( data );
+	}
+
+	public ubyte readUbyte() {
+		char[]	data = readBytes( 1 );
+		return data[0];
+	}
+
+	public uint readInt() {
+		char[] data = readBytes( 4 );
+		return data[0] + ( data[1] << 8 ) + ( data[2] << 16 ) + ( data[3] << 24 );
+	}
+
+	public ushort readUshort() {
+		char[] data = readBytes( 2 );
+		return data[0] + ( data[1] << 8 );
+	}
 
 	public char[] dup(){
-		return Buff[0..Length].dup;
+		return buffer[0..bytesWritten].dup;
 	}
 
-	public char[] buffer() {
-		return Buff[0..Length];
+	public char[] getBuffer() {
+		return buffer[0..bytesWritten];
 	}
-
 }
