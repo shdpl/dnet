@@ -9,6 +9,7 @@ int main() {
 		s.emit();
 		if (s.getAll().length > 0) {
 			s.broadcast("Leave me alone!", false);
+			s.broadcast( "I mean it!", true );
 		}
 		DnetSleep(1);
 	}

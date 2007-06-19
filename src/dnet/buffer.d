@@ -33,6 +33,12 @@ package class DnetBuffer {
 		readingPos = start;
 	}
 
+	/// Sets writing counter to zero.
+	public void clear( size_t start = 0 ) {
+		bytesWritten = start;
+		readingPos = start;
+	}
+
 	/// Returns the number of bytes written.
 	public uint length() {
 		return bytesWritten;
