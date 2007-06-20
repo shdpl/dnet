@@ -48,17 +48,14 @@ packet header structure
 -----------------------
 31	sequence
 1	packet flags flag
-32	reliable sequence
 32	reliable acknowledge
-[8	packet flags
-[16	fragment start
-16	fragment length]]]
+[8	packet flags]
 
 [reliable data]
 [unreliable data, if there's space left]
 -----------------------
 only reliable data is fragmented
-header is 17 bytes in the worst scenario, and 12 in the best one
+header is 9 bytes in the worst scenario, and 4 in the best one
 
 For the remote side, reliable and unreliable data are undistinguashable.
 Reliable data is queued, then passed to the remote side. It will be retransmitted until
@@ -92,8 +89,58 @@ public class DnetConnection {
 
 		// packet flags
 		enum Flags {
-			Fragmented		= ( 0 << 1 ),	// packet is fragmented
-			Disconnecting	= ( 1 << 1 ),	// remote side is disconnecting
+			Disconnecting	= ( 0 << 1 ),	// remote side is disconnecting
+		}
+
+		// protocol command bytes
+		enum CmdBytes {
+			Reliable,			// [int] sequence [char[]] data
+			Unreliable,
+			EndOfPacket,
+		}
+
+		// packet info
+		struct PacketInfo {
+			const int InfoSize	= 32;	// number of packets info is kept for
+			const int InfoSizeMask = InfoSize - 1;
+
+			struct Times {
+				long	sent;		// time when the packet has been sent
+				long	received;	// time when the packet has been received
+			}
+
+			Times	times[InfoSize];
+			int		latencies[InfoSize];
+			int		latency;
+
+			void packetSent( int sequence ) {
+				times[sequence & InfoSizeMask].sent = getUTCtime();
+			}
+
+			void packetReceived( int sequence ) {
+				times[sequence & InfoSizeMask].received = getUTCtime();
+				with ( times[sequence & InfoSizeMask] ) {
+					latencies[sequence & InfoSizeMask] = received - sent;
+				}
+			}
+
+			void calculateLatency( int sequence ) {
+				int	total;
+				int	count;
+
+				for ( size_t i = 0; i < InfoSize; i++ ) {
+					if ( latencies[i] > 0 ) {
+						total += latencies[i];
+						count++;
+					}
+				}
+				if ( !count ) {
+					latency = 0;
+				}
+				else {
+					latency = total / count;
+				}
+			}
 		}
 
 		DnetSocket	socket;					// socket used for communications
@@ -108,6 +155,9 @@ public class DnetConnection {
 
 		// message fragmenting
 
+		// packet information
+		PacketInfo	packetInfo;
+
 		// data buffers
 		DnetFifo	sendQueue;
 		char		reliableSendQue[ReliableBackup][];
@@ -115,9 +165,17 @@ public class DnetConnection {
 
 		int			outgoingSequence = 1;	// outgoing packet sequence number
 		int			incomingSequence;		// incoming packet sequence number
+		int			outgoingAcknowledge;	// last outgoingSequence the remote side has
+											// received
+											// this comes in handy when it gets to calculating
+											// pings and delta-compressing the messages
 		int			reliableSequence;		// last added reliable message, not necesarily sent or acknowledged yet
-		int			remoteReliableSequence;	// reliableSequence of the remote side
 		int			reliableAcknowledge;	// last acknowledged reliable message
+		int			lastReliableSequence;	// last received reliable sequence
+											// this is reliableAcknowledge on the remote side
+											// it is also needed to detect reliable data loss
+											// and to filter duplicated reliable data, which
+											// can occur in case of a lossy connection
 	}
 
 	/**
@@ -140,8 +198,9 @@ public class DnetConnection {
 
 		outgoingSequence 	= outgoingSequence.init;
 		incomingSequence 	= incomingSequence.init;
+		outgoingAcknowledge	= outgoingAcknowledge.init;
 		reliableSequence 	= reliableSequence.init;
-		remoteReliableSequence = remoteReliableSequence.init;
+		lastReliableSequence = lastReliableSequence.init;
 		reliableAcknowledge = reliableAcknowledge.init;
 
 		state = State.Connected;
@@ -228,6 +287,13 @@ public class DnetConnection {
 	}
 
 	/**
+	 * Returns latency value.
+	 */
+	final public int getLatency() {
+		return packetInfo.latency;
+	}
+
+	/**
 	 * Buffers the data.
 	 */
 	final public void send( char[] buff, bool reliable )
@@ -240,16 +306,15 @@ public class DnetConnection {
 	}
 	body {
 		if ( reliable ) {
-			reliableSequence++;
-
 			// if we would be losing a reliable data that hasn't been acknowledged,
 			// we must drop the connection
-			if ( reliableSequence - reliableAcknowledge == ReliableBackup + 1 ) {
+			if ( reliableSequence - reliableAcknowledge > ReliableBackup ) {
 				writefln( "irrecoverable loss of reliable data, disconnecting" );
 				disconnect();
 				return;
 			}
 
+			reliableSequence++;
 			size_t	index = reliableSequence & ( ReliableBackup - 1 );
 			if ( reliableSendQue[index] !is null ) {
 				delete reliableSendQue[index];
@@ -319,6 +384,8 @@ public class DnetConnection {
 		}
 
 		transmit();
+
+		packetInfo.calculateLatency( outgoingSequence );
 	}
 
 	/**
@@ -336,25 +403,6 @@ public class DnetConnection {
 			return;		// not yet connected
 		}
 
-		void putReliableData( ref DnetBuffer buff ) {
-			for ( size_t i = reliableAcknowledge + 1; i <= reliableSequence; i++ ) {
-				size_t	index = i & ( ReliableBackup - 1 );
-				buff.putData( reliableSendQue[index] );
-			}
-		}
-
-		void putUnreliableData( ref DnetBuffer buff ) {
-			char[] tmp = sendQueue.get();
-			while ( tmp.length > 0 ) {
-				if ( buff.length + tmp.length > buff.size ) {
-					break;	// overflowed
-				}
-
-				buff.putData( tmp );
-				tmp = sendQueue.get();
-			}
-		}
-
 		//
 		// assemble packet data
 		//
@@ -362,11 +410,7 @@ public class DnetConnection {
 		char[DnetPacketSize]	dataBuffer;
 		DnetBuffer				data = new DnetBuffer( dataBuffer );
 
-		// write reliable data
-		putReliableData( data );
-
-		// append unreliable data if there's space left
-		putUnreliableData( data );
+		assemblePacket( data );
 
 		//
 		// write the packet
@@ -378,10 +422,6 @@ public class DnetConnection {
 			if ( state == State.Disconnecting ) {
 				// that's it, we're disconnecting
 				flags |= Flags.Disconnecting;
-			}
-			if ( data.length > DnetFragmentSize ) {
-				// message is large so it can't be sent in one piece
-				flags |= Flags.Fragmented;
 			}
 
 			return flags;
@@ -404,12 +444,8 @@ public class DnetConnection {
 			buff.putInt( outgoingSequence );
 		}
 
-		buff.putInt( reliableSequence );
-		buff.putInt( remoteReliableSequence );
-
-		if ( packetFlags & Flags.Fragmented ) {
-			// TODO: fragment
-		}
+		buff.putInt( outgoingAcknowledge );
+		buff.putInt( lastReliableSequence );
 
 		// write packet data
 		buff.putData( data.getBuffer() );
@@ -423,6 +459,9 @@ public class DnetConnection {
 
 		// mark time we last sent a packet
 		lastTransmit = getUTCtime();
+
+		// update packet info
+		packetInfo.packetSent( outgoingSequence );
 	}
 
 	private void transmitConnectionRequest() {
@@ -483,9 +522,6 @@ public class DnetConnection {
 			packetFlags = buff.readUbyte();
 		}
 
-		int		reliable = buff.readInt();
-		int		acknowledge = buff.readInt();
-
 //		writefln( "drop %d", sequence - ( IncomingSequence + 1 ) );
 
 		// check sequences
@@ -496,19 +532,23 @@ public class DnetConnection {
 		// check packet flags
 		checkPacketFlags( packetFlags );
 
-		remoteReliableSequence = reliable;
-		reliableAcknowledge = acknowledge;
+		outgoingAcknowledge = buff.readInt();
+		reliableAcknowledge = buff.readInt();
+
 		incomingSequence = sequence;
 
 		// assemble fragments
 
-		// put into receive queue
-		receiveQueue.put( buff.getBuffer[buff.bytesRead..$].dup );
+		// parse the packet
+		parsePacket( buff );
 
 //		writefln( "<-- %s %d %d", remoteAddress, reliableSequence, reliableAcknowledge );
 
 		// mark time we last received a packet
 		lastReceive = getUTCtime();
+
+		// update packet info
+		packetInfo.packetReceived( outgoingAcknowledge );
 	}
 
 	private void processOutOfBand( DnetBuffer buff, DnetAddress addr ) {
@@ -587,6 +627,73 @@ public class DnetConnection {
 					writefln( "unrecognised OOB packet: %s", cmd );
 				}
 				break;
+		}
+	}
+
+	private void assemblePacket( ref DnetBuffer buff ) {
+		void putReliableData() {
+			for ( size_t i = reliableAcknowledge + 1; i <= reliableSequence; i++ ) {
+				size_t	index = i & ( ReliableBackup - 1 );
+				buff.putUbyte( CmdBytes.Reliable );
+				buff.putInt( i );
+				buff.putString( reliableSendQue[index] );
+			}
+		}
+
+		void putUnreliableData() {
+			buff.putUbyte( CmdBytes.Unreliable );
+			char[] tmp = sendQueue.get();
+			while ( tmp.length > 0 ) {
+				if ( buff.length + tmp.length > buff.size ) {
+					break;	// overflowed
+				}
+
+				buff.putData( tmp );
+				tmp = sendQueue.get();
+			}
+		}
+
+		// write reliable data
+		putReliableData();
+
+		// append unreliable data if there's space left
+		putUnreliableData();
+	}
+
+	private void parsePacket( ref DnetBuffer buff ) {
+		while ( true ) {
+			ubyte	cmd = buff.readUbyte();
+			if ( buff.isOverflowed ) {
+				disconnect();
+				break;
+			}
+
+			if ( cmd == CmdBytes.Reliable ) {
+				int sequence = buff.readInt();
+				char[]	s = buff.readString();
+
+				if ( sequence < lastReliableSequence ) {
+					continue;		// we have already received it
+				}
+
+				if ( sequence > lastReliableSequence + 1 ) {
+					// we have lost some of the data, so drop the connection
+					writefln( "lost some reliable data" );
+					disconnect();
+					break;
+				}
+
+				lastReliableSequence = sequence;
+				receiveQueue.put( s.dup );
+			}
+			else if ( cmd == CmdBytes.Unreliable ) {
+				receiveQueue.put( buff.getBuffer[buff.bytesRead..$].dup );
+				break;
+			}
+			else {
+				disconnect();
+				break;
+			}
 		}
 	}
 

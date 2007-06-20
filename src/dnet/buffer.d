@@ -21,11 +21,17 @@ package class DnetBuffer {
 		char[]	buffer;
 		size_t	bytesWritten;
 		size_t	readingPos;
+		bool	overflowed;
 	}
 
 	this( char[] theBuffer ) {
 		buffer = theBuffer;
 		bytesWritten = 0;
+	}
+
+	/// Returns true if buffer has been overflown.
+	public bool isOverflowed() {
+		return overflowed;
 	}
 
 	/// Sets reading counter to zero.
@@ -56,6 +62,7 @@ package class DnetBuffer {
 
 	private void writeBytes( char[] bytes ) {
 		if ( bytesWritten + bytes.length > buffer.length ) {
+			overflowed = true;
 			// overflow!
 			if ( bytes.length > buffer.length ) {
 				return;
@@ -70,6 +77,7 @@ package class DnetBuffer {
 	private char[] readBytes( int numBytes ) {
 		if ( readingPos + numBytes > bytesWritten ) {
 			// underflow!
+			overflowed = true;
 			return null;
 		}
 
@@ -108,19 +116,46 @@ package class DnetBuffer {
 		writeBytes( data );
 	}
 
+	public void putString( char[] value )
+	in {
+		assert( value.length );
+	}
+	body {
+		putUshort( value.length );
+		writeBytes( value );
+	}
+
 	public ubyte readUbyte() {
 		char[]	data = readBytes( 1 );
+		if ( overflowed ) {
+			return 0;
+		}
 		return data[0];
 	}
 
 	public uint readInt() {
 		char[] data = readBytes( 4 );
+		if ( overflowed ) {
+			return 0;
+		}
 		return data[0] + ( data[1] << 8 ) + ( data[2] << 16 ) + ( data[3] << 24 );
 	}
 
 	public ushort readUshort() {
 		char[] data = readBytes( 2 );
+		if ( overflowed ) {
+			return 0;
+		}
 		return data[0] + ( data[1] << 8 );
+	}
+
+	public char[] readString() {
+		size_t	length = readUshort();
+		char[]	data = readBytes( length );
+		if ( overflowed ) {
+			return "";
+		}
+		return data;
 	}
 
 	public char[] dup(){

@@ -17,7 +17,7 @@ int main() {
 		t += DnetTime();
 
 		if (t > 1000){
-			writefln("got %d packets per sec", i);
+			writefln("got %d packets per sec, ping %d", i, c.getLatency());
 			t = 0;
 			i = 0;
 		}
