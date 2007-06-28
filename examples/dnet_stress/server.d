@@ -3,8 +3,7 @@ import std.stdio;
 
 int main() {
 
-	DnetCollection s = new DnetCollection();
-	s.bind(new DnetAddress("localhost", 3333), new DnetAddress("localhost", 3003));
+	DnetCollection s = new DnetCollection( new DnetAddress("localhost", 3333), new DnetAddress("localhost", 3003) );
 	while(true){
 		s.emit();
 		if (s.getAll().length > 0) {

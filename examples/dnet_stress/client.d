@@ -9,7 +9,9 @@ int main() {
 	uint t = 0;
 	int i = 0;
 	while(true){
-		c.send( "Hiya!", false );
+		if ( c.connected() && c.readyToTransmit() ) {
+			c.send( "Hiya!", false );
+		}
 		c.emit();
 		if (c.receive().length > 0) {
 			i++;

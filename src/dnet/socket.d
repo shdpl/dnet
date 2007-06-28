@@ -73,12 +73,19 @@ public class DnetAddress {
 public class DnetSocket {
 
 	private {
-		UdpSocket Socket;
+		UdpSocket	Socket;
+		long		bytesSent;
+		long		bytesReceived;
 	}
 
 	this(){
 		Socket = new UdpSocket(AddressFamily.INET);
 		Socket.blocking(false);
+	}
+
+	public void resetCounters() {
+		bytesSent = 0;
+		bytesReceived = 0;
 	}
 
 	public void bind(DnetAddress address){
@@ -97,6 +104,7 @@ public class DnetSocket {
 		//	buff.buffer()
 		//);
 		Socket.sendTo(buff, address.Address);
+		bytesSent += buff.length;
 	}
 
 	public int receiveFrom(out DnetBuffer buff, out DnetAddress address){
@@ -106,6 +114,7 @@ public class DnetSocket {
 		if (size > 0) {
 			buff = new DnetBuffer( new char[size] );
 			buff.putData( tmp[0..size] );
+			bytesReceived += size;
 		}
 		address = new DnetAddress((cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port());
 

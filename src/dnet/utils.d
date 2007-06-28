@@ -135,3 +135,19 @@ unittest {
 	assert( tokens[2] == "sequence" );
 	assert( tokens[3] == "another lengthy token sequence" );
 }
+
+template BYTES2BITS( int n ) {
+	const int BYTES2BITS = n << 3;
+}
+
+template BITS2BYTES( int n ) {
+	const int BITS2BYTES = n >> 3;
+}
+
+unittest {
+	int	a = BYTES2BITS!( 1 );
+	assert( a == 8 );
+
+	int b = BITS2BYTES!( 32 );
+	assert( b == 4 );
+}
