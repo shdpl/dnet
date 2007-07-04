@@ -4,13 +4,13 @@ import std.stdio;
 int main() {
 
 	DnetConnection c = new DnetConnection();
-	c.connectToServer( new DnetAddress( "localhost", 3333 ) );
+	c.connectTo( new DnetAddress( "localhost", 3333 ) );
 
 	uint t = 0;
 	int i = 0;
 	while(true){
 		if ( c.connected() && c.readyToTransmit() ) {
-			c.send( "Hiya!", false );
+			c.send( cast(ubyte[])"Hiya!", false );
 		}
 		c.emit();
 		if (c.receive().length > 0) {

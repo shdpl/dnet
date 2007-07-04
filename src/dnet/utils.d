@@ -126,14 +126,15 @@ package char[][] splitIntoTokens( char[] s ) {
 }
 
 unittest {
-	char[]	string = "lengthy token sequence \"another lengthy token sequence\"";
+	char[]	string = "re-focus on distant stars \"brings less voices to entertain us\"";
 	char[][]	tokens = string.splitIntoTokens();
 
-	assert( tokens.length == 4 );
-	assert( tokens[0] == "lengthy" );
-	assert( tokens[1] == "token" );
-	assert( tokens[2] == "sequence" );
-	assert( tokens[3] == "another lengthy token sequence" );
+	assert( tokens.length == 5 );
+	assert( tokens[0] == "re-focus" );
+	assert( tokens[1] == "on" );
+	assert( tokens[2] == "distant" );
+	assert( tokens[3] == "stars" );
+	assert( tokens[4] == "brings less voices to entertain us" );
 }
 
 template BYTES2BITS( int n ) {

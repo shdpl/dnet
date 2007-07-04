@@ -17,34 +17,41 @@ private import std.stdio;
 private import std.string;
 
 /**
- Auto resizeable FIFO (First In First Out) container that stores char[] type of unlimited length.
- Overflow shouldn't happen becouse capacity will grow. 
- Underflow is handled by returning empty string.
- Capacity can only grow and unused data is overwritten, not cleaned up.
+	Auto resizeable FIFO (First In First Out) container that stores ubyte[] type of unlimited length.
+	Overflow shouldn't happen becouse capacity will grow. 
+	Underflow is handled by returning empty string.
+	Capacity can only grow and unused data is overwritten, not cleaned up.
 
- TODO:
-  if canister could shrink unneededcapacity , 
-  free unused indexes to reduce memory load
+	TODO:
+	if canister could shrink unneededcapacity , 
+	free unused indexes to reduce memory load
+	TODO: in fact, buffers should be statically allocated, and buffer overflow is an error
 */
-public class DnetFifo {
+public struct DnetFifo {
 	private uint Capacity;
-	private char[][] Buff;
+	private ubyte[][] Buff;
 	private uint First;
 	private uint Last;
 	private uint Length;
 
-	this(){
-		First = 0;
-		Last = 0;
-		Capacity = 16; // start with default capacity
-		Length = 0;
-		Buff.length = Capacity;
+	static DnetFifo opCall() {
+		DnetFifo	fifo;
+
+		with ( fifo ) {
+			First = 0;
+			Last = 0;
+			Capacity = 16; // start with default capacity
+			Length = 0;
+			Buff.length = Capacity;
+		}
+
+		return fifo;
 	}
 
 	/**
 	Stores string.
 	*/
-	public void put(char[] data){
+	public void put(ubyte[] data){
 		if (Length == Capacity){
 			Capacity *= 2;
 			Buff.length = Capacity;
@@ -62,8 +69,8 @@ public class DnetFifo {
 	/**
 	Gets string. If no more left, return empty string.
 	*/
-	public char[] get(){
-		char[] s = ""; // we handle underflows by returning empty string
+	public ubyte[] get(){
+		ubyte[] s = null; // we handle underflows by returning empty string
 		if (Length > 0){
 			Length--;
 			s = Buff[First];
@@ -100,23 +107,23 @@ public class DnetFifo {
 	}
 
 	unittest {
-		DnetFifo q = new DnetFifo();
-		assert(q.get() == "");
+		auto q = DnetFifo();
+		assert(q.get().length == 0 );
 		assert(q.length == 0);
-		q.put("a");
-		q.put("b");
-		q.put("c");
+		q.put(cast(ubyte[])"things you can resist");
+		q.put(cast(ubyte[])"things you cannot");
+		q.put(cast(ubyte[])"they're just framed in blood");
 		assert(q.length == 3);
-		assert(q.get() == "a");
+		assert(cast(char[])q.get() == "things you can resist");
 		assert(q.length == 2);
-		assert(q.get() == "b");
-		assert(q.get() == "c");
-		assert(q.get() == "");
+		assert(cast(char[])q.get() == "things you cannot");
+		assert(cast(char[])q.get() == "they're just framed in blood");
+		assert(cast(char[])q.get() == "");
 		assert(q.length == 0);
 		for(int i=0; i < 1024; i++){
-			q.put("a");
-                        assert(q.get() == "a");
-                }
+			q.put(cast(ubyte[])"a");
+			assert(cast(char[])q.get() == "a");
+		}
 		writefln("DnetFifo unittest PASS");
 	}
 

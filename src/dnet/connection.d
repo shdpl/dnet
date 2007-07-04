@@ -12,17 +12,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 module dnet.connection;
 
-import std.conv;
-import std.stdio;
-import std.random;
-import std.string;
-import std.date;
-import std.utf;
+private import std.conv;
+private import std.stdarg;
+private import std.stdio;
+private import std.random;
+private import std.string;
+private import std.date;
+private import std.utf;
 
-import dnet.socket;
-import dnet.fifo;
-import dnet.buffer;
-import dnet.utils;
+private import dnet.socket;
+private import dnet.fifo;
+private import dnet.buffer;
+private import dnet.utils;
+
+private import dnet.internal.flowinfo;
+private import dnet.internal.window;
 
 public const {
 	size_t	PACKET_SIZE			= 1400;		/// Max. size of a single packet, in bytes
@@ -34,14 +38,37 @@ private const {
 	int		PROTOCOL_VERSION	= 1;
 }
 
-private void sendOOB( DnetSocket socket, char[] buff, DnetAddress to ) {
-	// not the smartest way...
-	int	x = -1;
-	char[]	s = ( cast( char * )&x )[0..x.sizeof] ~ buff;
+private void sendOOB( DnetSocket socket, DnetAddress to, TypeInfo[] arguments, va_list argptr ) {
+	char[PACKET_SIZE]	s;
+	*cast( int * )s = -1;
 
-	socket.sendTo( s, to );
+	size_t i = int.sizeof;
+
+	void putc( dchar c ) {
+		if ( c <= 0x7F ) {
+			if ( i >= s.length ) {
+				throw new Exception( "dnet.connection.DnetConnection.sendOOB" );
+			}
+			s[i] = cast( char )c;
+			++i;
+		}
+		else {
+			char[4] buf;
+			char[] b;
+
+			b = std.utf.toUTF8( buf, c );
+			if ( i + b.length > s.length ) {
+				throw new Exception( "dnet.connection.DnetConnection.sendOOB" );
+			}
+			s[i..i + b.length] = b[];
+			i += b.length;
+		}
+	}
+
+	std.format.doFormat( &putc, arguments, argptr );
+
+	socket.sendTo( s[0..i], to );
 }
-
 
 /*
 packet header structure
@@ -55,13 +82,11 @@ CMD_BYTES.RELIABLE
 ubyte count
 count times {
 	ushort	length
-	char[]	data
+	ubyte[]	data
 }
 CMD_BYTES.UNRELIABLE
-char[] data
+ubyte[] data
 -----------------------
-only reliable data is fragmented
-
 For the remote side, reliable and unreliable data are undistinguashable.
 Reliable data is queued, then passed to the remote side. It will be retransmitted until
 remote side acknowledges of the delivery. DnetConnection will try to combine multiple
@@ -70,15 +95,14 @@ to the packet if there's enough space left.
 */
 
 /**
-Simple name for two-end points connection, where one is allways local address.
-Remote address' port *might* not be the same after receiving response.
-It is because other side might spawn new socket to communicate with calling side.
+	Simple name for two-end points connection, where one is allways local address.
+	Remote address' port *might* not be the same after receiving response.
+	It is because other side might spawn new socket to communicate with calling side.
 */
 public class DnetConnection {
 
 	private {
 		const int RELIABLE_BACKUP		= 64;	// Size of the reliable send queue.
-		const int RELIABLE_BACKUP_MASK	= RELIABLE_BACKUP - 1;
 
 		// connection state
 		enum STATE {
@@ -91,7 +115,8 @@ public class DnetConnection {
 
 		// packet flags
 		enum Flags {
-			Disconnecting	= ( 0 << 1 ),	// remote side is disconnecting
+			Disconnecting	= ( 1 << 0 ),	// remote side is disconnecting
+			Fragmented		= ( 1 << 1 ),	// packet is a fragment
 		}
 
 		// protocol command bytes
@@ -100,92 +125,38 @@ public class DnetConnection {
 			UNRELIABLE,
 		}
 
-		// data flow info
-		struct FlowInfo {
-			const int INFO_SIZE		= 32;	// number of packets info is kept for
-			const int INFO_SIZE_MASK	= INFO_SIZE - 1;
-
-			struct Times {
-				long	sent;		// time when the packet has been sent
-				long	received;	// time when the packet has been received
-			}
-
-			Times[INFO_SIZE]	times;
-			int[INFO_SIZE]		latencies;
-			int					latency;
-
-			int					bandwidth;	// in bytes per second
-			long				packetTime;	// time at which next packet should be sent
-
-			void reset() {
-				// reset everything but the bandwidth
-				times[] = times.init;
-				latencies[] = latencies.init;
-				latency = latency.init;
-				packetTime = packetTime.init;
-			}
-
-			void dataSent( int sequence, int packetSize ) {
-				const int HEADER_OVERHEAD	= 48;
-				times[sequence & INFO_SIZE_MASK].sent = getUTCtime();
-
-				int msec = ( packetSize + HEADER_OVERHEAD ) * ( 10000 / bandwidth );
-				packetTime = getUTCtime() + msec;
-			}
-
-			void dataReceived( int sequence ) {
-				times[sequence & INFO_SIZE_MASK].received = getUTCtime();
-				with ( times[sequence & INFO_SIZE_MASK] ) {
-					latencies[sequence & INFO_SIZE_MASK] = received - sent;
-				}
-			}
-
-			void calculateLatency( int sequence ) {
-				int	total;
-				int	count;
-
-				for ( size_t i = 0; i < INFO_SIZE; i++ ) {
-					if ( latencies[i] > 0 ) {
-						total += latencies[i];
-						count++;
-					}
-				}
-				if ( !count ) {
-					latency = 0;
-				}
-				else {
-					latency = total / count;
-				}
-			}
-
-			// returns true if bandwidth won't be chocked if we send another packet
-			bool readyToTransmit() {
-				if ( getUTCtime() < packetTime ) {
-					return false;
-				}
-				return true;
-			}
+		// fragment buffer
+		struct Fragment {
+			char[MESSAGE_SIZE]	buffer = 0;
+			int					length;
 		}
 
 		DnetSocket	socket;					// socket used for communications
 
 		// connection information
 		STATE		state;					// state of the connection
-		uint		challengeNumber;
-		DnetAddress	remoteAddress;
+		uint		challengeNumber;		// challenge number we got from server
+		DnetAddress	remoteAddress;			// address of the server
 		DnetAddress	publicAddress;			// local address as translated by a NAT
-		char[]		userData;
+		char[]		userData;				// user data passed in connectTo()
 		long		lastReceive;			// time the last packet has been received
 		long		lastTransmit;			// time the last packet has been sent
 
-		// message fragmenting
+		// outgoing fragments buffer
+		bool		outFragments;
+		Fragment	outFragment;
+		int			outFragmentOffset;
+
+		// incoming fragments buffer
+		int			inFragmentSequence;
+		Fragment	inFragment;
 
 		// flow control information
 		FlowInfo	flowInfo;
 
 		// data buffers
 		DnetFifo	sendQueue;
-		char		reliableSendQue[RELIABLE_BACKUP][];
+		DnetWindow	reliableWindow;
 		DnetFifo	receiveQueue;
 
 		int			outgoingSequence = 1;	// outgoing packet sequence number
@@ -194,7 +165,6 @@ public class DnetConnection {
 											// received
 											// this comes in handy when it gets to calculating
 											// pings and delta-compressing the messages
-		int			reliableSequence;		// last added reliable message, not necesarily sent or acknowledged yet
 		int			reliableAcknowledge;	// last acknowledged reliable message
 		int			lastReliableSequence;	// last received reliable sequence
 											// this is reliableAcknowledge on the remote side
@@ -204,12 +174,12 @@ public class DnetConnection {
 	}
 
 	/**
-	 * Constructor.
-	 * Parameters:
-	 * socket specifies _socket to use for communications.
-	 * bandwidth specifies amount of downstream _bandwidth available, in bps.
-	 * bandwidth defaults to 28.8Kbps.
-	 */
+		Constructor.
+		Parameters:
+		socket specifies _socket to use for communications.
+		bandwidth specifies amount of downstream _bandwidth available, in bps.
+		bandwidth defaults to 28.8Kbps.
+	*/
 	this( DnetSocket socket = null, int bandwidth = 28000 ) {
 		if ( socket !is null ) {
 			this.socket = socket;
@@ -218,10 +188,11 @@ public class DnetConnection {
 			this.socket = new DnetSocket();
 		}
 
-		sendQueue = new DnetFifo();
-		receiveQueue = new DnetFifo();
+		sendQueue = DnetFifo();
+		reliableWindow = DnetWindow( RELIABLE_BACKUP );
+		receiveQueue = DnetFifo();
 
-		flowInfo.bandwidth = bandwidth;
+		flowInfo.availableBandwidth = bandwidth;
 	}
 
 	private void setup( DnetAddress theRemoteAddress, DnetAddress thePublicAddress ) {
@@ -231,11 +202,18 @@ public class DnetConnection {
 		outgoingSequence 	= outgoingSequence.init;
 		incomingSequence 	= incomingSequence.init;
 		outgoingAcknowledge	= outgoingAcknowledge.init;
-		reliableSequence 	= reliableSequence.init;
 		lastReliableSequence = lastReliableSequence.init;
 		reliableAcknowledge = reliableAcknowledge.init;
 
+		reliableWindow.clear();
 		flowInfo.reset();
+
+		outFragments = false;
+		outFragment = outFragment.init;
+		outFragmentOffset = 0;
+
+		inFragmentSequence = 0;
+		inFragment = inFragment.init;
 
 		state = STATE.CONNECTED;
 
@@ -243,8 +221,8 @@ public class DnetConnection {
 	}
 
 	/**
-	 * Disconnect from the server currently connected to.
-	 */
+		Disconnect from the server currently connected to.
+	*/
 	final public void disconnect() {
 		if ( state < STATE.CONNECTED ) {
 			return;		// not connected
@@ -261,12 +239,12 @@ public class DnetConnection {
 	}
 
 	/**
-	 * Connect to server (listening collection). If already connected, will disconnect
-	 * and then connect again.
-	 * Throws an UtfException if theUserData is not a valid UTF8 string.
-	 * theUserData may not be longer than 1024 characters.
+		Connect to server (listening collection). If already connected, will disconnect
+		and then connect again.
+		Throws an UtfException if theUserData is not a valid UTF8 string.
+		theUserData may not be longer than 1024 characters.
 	*/
-	final public void connectToServer( DnetAddress theRemoteAddress, char[] theUserData = null, DnetAddress theLocalAddress = null )
+	final public void connectTo( DnetAddress theRemoteAddress, char[] theUserData = null, DnetAddress theLocalAddress = null )
 	in {
 		std.utf.validate( theUserData );
 		assert( theUserData.length <= 1024 );
@@ -294,8 +272,8 @@ public class DnetConnection {
 	}
 
 	/**
-	 * Returns true if _connected, elsewise returns false.
-	 */
+		Returns true if _connected, elsewise returns false.
+	*/
 	final public bool connected() {
 		if ( state >= STATE.CONNECTED ) {
 			return true;
@@ -304,16 +282,16 @@ public class DnetConnection {
 	}
 
 	/**
-	 * Returns the address the connection is set-up on.
-	 */
+		Returns the address the connection is set-up on.
+	*/
 	final public DnetAddress getLocalAddress(){
 		return socket.getLocalAddress();
 	}
 
 	/**
-	 * Returns the address the connection is connecting/connected to.
-	 * null is returned if disconnected.
-	 */
+		Returns the address the connection is connecting/connected to.
+		null is returned if disconnected.
+	*/
 	final public DnetAddress getRemoteAddress(){
 		if ( state == STATE.DISCONNECTED ) {
 			return null;
@@ -322,40 +300,40 @@ public class DnetConnection {
 	}
 
 	/**
-	 * Returns latency value.
-	 */
+		Returns latency value.
+	*/
 	final public int getLatency() {
-		return flowInfo.latency;
+		return flowInfo.networkLatency();
 	}
 
 	/**
-	 * Sets/gets available _bandwidth, in bps.
-	 */
+		Sets/gets available _bandwidth, in bps.
+	*/
 	public void bandwidth( int newBandwidth ) {
-		flowInfo.bandwidth = newBandwidth;
+		flowInfo.availableBandwidth = newBandwidth;
 	}
 
 	/**
-	 * ditto
-	 */
+		ditto
+	*/
 	public int bandwidth() {
-		return flowInfo.bandwidth;
+		return flowInfo.availableBandwidth;
 	}
 
 	/**
-	 * Returns true if the bandwidth won't be chocked by sending another message.
-	 * Elsewise false is returned.
-	 */
+		Returns true if the bandwidth won't be chocked by sending another message.
+		Elsewise false is returned.
+	*/
 	public bool readyToTransmit() {
 		return flowInfo.readyToTransmit();
 	}
 
 	/**
-	 * Buffers the data for sending. Set reliable to true if you want the buff
-	 * retransmitted in case of packet loss.
-	 * Throws: AssertException if not connected().
-	 */
-	final public void send( char[] buff, bool reliable )
+		Buffers the data for sending. Set reliable to true if you want the buff
+		retransmitted in case of loss.
+		Throws: AssertException if not connected().
+	*/
+	final public void send( ubyte[] buff, bool reliable )
 	in {
 		// don't even try to send until you get connected
 		assert( state >= STATE.CONNECTED );
@@ -365,18 +343,13 @@ public class DnetConnection {
 		if ( reliable ) {
 			// if we would be losing a reliable data that hasn't been acknowledged,
 			// we must drop the connection
-			if ( reliableSequence - reliableAcknowledge > RELIABLE_BACKUP ) {
+			if ( reliableWindow.putSequence - reliableAcknowledge > RELIABLE_BACKUP ) {
 				writefln( "irrecoverable loss of reliable data, disconnecting" );
 				disconnect();
 				return;
 			}
 
-			reliableSequence++;
-			size_t	index = reliableSequence & RELIABLE_BACKUP_MASK;
-			if ( reliableSendQue[index] !is null ) {
-				delete reliableSendQue[index];
-			}
-			reliableSendQue[index] = buff.dup;
+			reliableWindow.put( buff );
 		}
 		else {
 			sendQueue.put( buff.dup );
@@ -385,21 +358,21 @@ public class DnetConnection {
 
 
 	/**
-	 * Sends an out-of-band packet.
-	 */
-	final public void sendOOB( char[] buff, DnetAddress to ) {
-		.sendOOB( socket, buff, to );
+		Sends an out-of-band packet.
+	*/
+	final public void sendOOB( DnetAddress to, ... ) {
+		.sendOOB( socket, to, _arguments, _argptr );
 	}
 
 	/**
-	Reads next received data.
-	*/
-	final public char[] receive() {
+		Reads next received data.
+	 */
+	final public ubyte[] receive() {
 		return receiveQueue.get();
 	}
 
 	/**
-	Sends and receives data to other end.
+		Sends and receives data to other end.
 	*/
 	final public void emit() {
 		if ( state == STATE.DISCONNECTED ) {
@@ -407,8 +380,9 @@ public class DnetConnection {
 		}
 
 		// receive
-		DnetBuffer buff;
-		scope DnetAddress addr;
+		ubyte[PACKET_SIZE]	packetBuffer;
+		auto				buff = DnetBuffer( packetBuffer );
+		scope DnetAddress	addr;
 
 		int size = socket.receiveFrom( buff, addr );
 		while ( size > 0 ) {
@@ -442,11 +416,11 @@ public class DnetConnection {
 
 		transmit( false );
 
-		flowInfo.calculateLatency( outgoingSequence );
+		flowInfo.calculateLatency();
 	}
 
 	/**
-	Time in miliseconds since last receive event.
+		Time in miliseconds since last receive event.
 	*/
 	final public long lastReceiveTime(){
 		return lastReceive;
@@ -466,14 +440,34 @@ public class DnetConnection {
 			return;		// we would probably choke the bandwidth if we do
 		}
 
+		// transmit fragments of previous message,
+		// if it was too large to send at once
+/*		if ( outFragments ) {
+			transmitNextFragment();
+			return;
+		}*/
+
 		//
-		// write down packet data
+		// write down packet payload
 		//
 
-		char[PACKET_SIZE]	dataBuffer;
-		DnetBuffer			data = new DnetBuffer( dataBuffer );
+		ubyte[PACKET_SIZE]	dataBuffer;
+		auto				data = DnetBuffer( dataBuffer );
 
-		preparePacket( data );
+		writePayload( data );
+
+		//
+		// fragment large messages
+		//
+
+/*		if ( data.length >= FRAGMENT_SIZE ) {
+			outFragments = true;
+			outFragmentOffset = 0;
+			outFragment.length = data.length;
+			outFragment.buffer[0..data.length] = data.getBuffer();
+			transmitNextFragment();		// send the first fragment
+			return;
+		}*/
 
 		//
 		// write the packet
@@ -493,22 +487,11 @@ public class DnetConnection {
 		// set packet flags
 		uint packetFlags = setPacketFlags();
 
-		char[PACKET_SIZE]	packet;
-		DnetBuffer			buff = new DnetBuffer( packet );
+		ubyte[PACKET_SIZE]	packet;
+		auto				buff = DnetBuffer( packet );
 
 		// write packet header
-		if ( packetFlags ) {
-			buff.putInt( outgoingSequence | ( 1 << 31 ) );
-
-			// write packet flags
-			buff.putUbyte( packetFlags );
-		}
-		else {
-			buff.putInt( outgoingSequence );
-		}
-
-		buff.putInt( outgoingAcknowledge );
-		buff.putInt( lastReliableSequence );
+		writePacketHeader( packetFlags, buff );
 
 		// write packet data
 		buff.putData( data.getBuffer() );
@@ -527,6 +510,56 @@ public class DnetConnection {
 		flowInfo.dataSent( outgoingSequence, data.length );
 	}
 
+	private void writePacketHeader( int packetFlags, ref DnetBuffer buff ) {
+		if ( packetFlags ) {
+			buff.putInt( outgoingSequence | ( 1 << 31 ) );
+
+			// write packet flags
+			buff.putUbyte( packetFlags );
+		}
+		else {
+			buff.putInt( outgoingSequence );
+		}
+
+		buff.putInt( outgoingAcknowledge );
+		buff.putInt( lastReliableSequence );
+	}
+/*
+	private void transmitNextFragment() {
+		assert( outFragments );
+
+		int		fragmentLength;
+
+		if ( outFragmentOffset + FRAGMENT_SIZE > outFragment.length ) {
+			fragmentLength = outFragment.length - outFragmentOffset;
+		}
+		else {
+			fragmentLength = FRAGMENT_SIZE;
+		}
+
+		char[PACKET_SIZE]	packet;
+		scope DnetBuffer	buff = new DnetBuffer( packet );
+
+		// write the packet header
+		writePacketHeader( Flags.Fragmented, buff );
+
+		// write fragment offset and length
+		buff.putUshort( outFragmentOffset );
+		buff.putUshort( fragmentLength );
+
+		// write down the packet data
+		buff.putData( outFragment.buffer[outFragmentOffset..outFragmentOffset+fragmentLength] );
+		outFragmentOffset += fragmentLength;
+
+		// send the packet
+		socket.sendTo( buff.getBuffer(), remoteAddress );
+
+		if ( outFragmentOffset == outFragment.length && fragmentLength != FRAGMENT_SIZE ) {
+			outFragments = false;
+			outgoingSequence++;
+		}
+	}
+*/
 	private void transmitConnectionRequest() {
 		if ( state == STATE.CHALLENGING || state == STATE.CONNECTING ) {
 			// send connection requests once in five seconds
@@ -534,17 +567,14 @@ public class DnetConnection {
 				return;	// time hasn't come yet
 			}
 
-			char[PACKET_SIZE] packet;
-			char[] request;
 
 			switch ( state ) {
 				case STATE.CHALLENGING:
-					sendOOB( "challenge_request", remoteAddress );
+					sendOOB( remoteAddress, "challenge_request" );
 					break;
 				case STATE.CONNECTING:
-					request = sformat( packet, "connection_request %d %d \"%s\"",
+					sendOOB( remoteAddress, "connection_request %d %d \"%s\"",
 										PROTOCOL_VERSION, challengeNumber, userData );
-					sendOOB( request, remoteAddress );
 					break;
 			}
 
@@ -601,12 +631,12 @@ public class DnetConnection {
 		outgoingAcknowledge = buff.readInt();
 		reliableAcknowledge = buff.readInt();
 
-		incomingSequence = sequence;
-
 		// assemble fragments
 
+		incomingSequence = sequence;
+
 		// parse the packet
-		parsePacket( buff );
+		parsePayload( buff );
 
 //		writefln( "<-- %s %d %d", remoteAddress, reliableSequence, reliableAcknowledge );
 
@@ -615,7 +645,7 @@ public class DnetConnection {
 	}
 
 	private void processOutOfBand( DnetBuffer buff, DnetAddress addr ) {
-		char[]			cmd = buff.getBuffer[int.sizeof..$];
+		char[]			cmd = cast( char[] )buff.getBuffer[int.sizeof..$];
 		try {
 			std.utf.validate( cmd );
 		}
@@ -695,19 +725,22 @@ public class DnetConnection {
 		}
 	}
 
-	private void preparePacket( ref DnetBuffer buff ) {
+	/**
+		Writes down packet payload.
+	*/
+	private void writePayload( ref DnetBuffer buff ) {
 		// write reliable data
 		buff.putUbyte( CMD_BYTES.RELIABLE );
-		buff.putUbyte( reliableSequence - reliableAcknowledge );
-		for ( size_t i = reliableAcknowledge + 1; i <= reliableSequence; i++ ) {
-			size_t	index = i & RELIABLE_BACKUP_MASK;
+
+		buff.putUbyte( reliableWindow.putSequence - reliableAcknowledge );
+		for ( size_t i = reliableAcknowledge + 1; i <= reliableWindow.putSequence; i++ ) {
 			buff.putInt( i );
-			buff.putString( reliableSendQue[index] );
+			buff.putString( reliableWindow.get( i ) );
 		}
 
 		// append unreliable data if there's space left
 		buff.putUbyte( CMD_BYTES.UNRELIABLE );
-		char[] tmp = sendQueue.get();
+		ubyte[] tmp = sendQueue.get();
 		while ( tmp.length > 0 ) {
 			if ( buff.length + tmp.length > buff.size ) {
 				break;	// overflowed
@@ -718,7 +751,10 @@ public class DnetConnection {
 		}
 	}
 
-	private void parsePacket( ref DnetBuffer buff ) {
+	/**
+		Parses received packet payload.
+	*/
+	private void parsePayload( ref DnetBuffer buff ) {
 		while ( true ) {
 			ubyte	cmd = buff.readUbyte();
 			if ( buff.isOverflowed ) {
@@ -731,7 +767,7 @@ public class DnetConnection {
 
 				for ( size_t i = 0; i < count; i++ ) {
 					int sequence = buff.readInt();
-					char[]	s = buff.readString();
+					ubyte[]	s = buff.readString();
 
 					if ( sequence < lastReliableSequence ) {
 						continue;		// we have already received it
@@ -779,19 +815,19 @@ public class DnetConnection {
 }
 
 /**
-A collection of connections.
-This can be a server if you bind socket and listen 
-or it can be a client connected to multiple points.
+	A collection of connections.
+	This can be a server if you bind socket and listen 
+	or it can be a client connected to multiple points.
 
-Collection is scalable enough to service up to 500 connections. It uses asynchronous
-IO running in a single thread. The rationale behind this solution is that much more
-scalable game server (>500 connections) will most likely be developed to run in a
-cluster. Authors deem they cannot implement a server-cluster architecture with
-synchronous IO and multithreading. This is due to lack of the appropriate hardware.
-BUT... maybe someday there will be DnetMassiveCollection.
+	Collection is scalable enough to service up to 500 connections. It uses asynchronous
+	IO running in a single thread. The rationale behind this solution is that much more
+	scalable game server (>500 connections) will most likely be developed to run in a
+	cluster. Authors deem they cannot implement a server-cluster architecture with
+	synchronous IO and multithreading. This is due to lack of the appropriate hardware.
+	BUT... maybe someday there will be DnetMassiveCollection.
 
-NOTE: the number of concurrent connections is not bounded in any way.
-TODO: make use of socket sets.
+	NOTE: the number of concurrent connections is not bounded in any way.
+	TODO: make use of socket sets.
 */
 public class DnetCollection {
 
@@ -820,8 +856,8 @@ public class DnetCollection {
 	}
 
 	/**
-	address is the _address to which login requests should be sent.
-	inbandAddress denotes _address to which in-band packets should be sent.
+		address is the _address to which login requests should be sent.
+		inbandAddress denotes _address to which in-band packets should be sent.
 	*/
 	this( DnetAddress address, DnetAddress inbandAddress )
 	in {
@@ -853,7 +889,7 @@ public class DnetCollection {
 		return connections;
 	}
 
-	final public void broadcast( char[] data, bool reliable ) {
+	final public void broadcast( ubyte[] data, bool reliable ) {
 		foreach ( ref DnetConnection c; connections ) {
 			// data only goes to connected
 			if ( c.state >= DnetConnection.STATE.CONNECTED ) {
@@ -863,7 +899,7 @@ public class DnetCollection {
 	}
 
 	/**
-	Sends and receives data.
+		Sends and receives data.
 	*/
 	final public void emit() {
 		// remove disconnecting or timed-out connections
@@ -888,8 +924,8 @@ public class DnetCollection {
 	}
 
 	/**
-	Walks through connections and calls onMessage() for those having receiveQueue.length
-	greater than 0.
+		Walks through connections and calls onMessage() for those having receiveQueue.length
+		greater than 0.
 	*/
 	private void issueMessageEvents() {
 		foreach ( ref DnetConnection c; connections ) {
@@ -903,39 +939,43 @@ public class DnetCollection {
 	}
 
 	/**
-	 * Called when unknown out-of-band packet is received for processing.
-	 * args hold the arguments. Return true if packet has been successfully
-	 * processed, return false otherwise.
-	 * NOTE: if you store args for later use, please store the copy of it.
-	 */
+		Called when unknown out-of-band packet is received for processing.
+		args hold the arguments. Return true if packet has been successfully
+		processed, return false otherwise.
+		NOTE: if you store args for later use, please store the copy of it.
+	*/
 	public bool onOOBpacket( char[][] args ) {
 		return false;
 	}
 
 	/**
-	 * Called when connection request from addr is being processed. userData
-	 * holds the user data specified in DnetConnection.connectToServer(). You may want
-	 * refuse the connection by returning false. You may also fill the reason with refusal
-	 * _reason text, which will be sent to addr and trigger DnetConnection.onMessage() there.
-	 * NOTE: if you store the userData for later use, please store the copy of it.
-	 */
+		Called when connection request from addr is being processed. userData
+		holds the user data specified in DnetConnection.connectTo(). You may want
+		refuse the connection by returning false. You may also fill the reason with refusal
+		_reason text, which will be sent to addr and trigger DnetConnection.onMessage() there.
+		NOTE: if you store the userData for later use, please store the copy of it.
+	*/
 	public bool onConnect( DnetAddress addr, char[] userData, out char[] reason ) {
 		return true;
 	}
 
 	/**
-	 * Called when c is being disconnected.
-	 */
+		Called when c is being disconnected.
+	*/
 	public void onDisconnect( ref DnetConnection c ) {
 
 	}
 
 	/**
-	 * Called when message has been received from c.
-	 * Place your processing here.
-	 */
+		Called when message has been received from c.
+		Place your processing here.
+	*/
 	public void onMessage( ref DnetConnection c ) {
 
+	}
+
+	private void sendOOB( DnetAddress to, ... ) {
+		.sendOOB( loginSocket, to, _arguments, _argptr );
 	}
 
 	private void cleanupConnections() {
@@ -973,9 +1013,11 @@ public class DnetCollection {
 	}
 
 	private void listenForOutOfBand() {
-		DnetBuffer buff;
-		DnetAddress addr;
-		int size = loginSocket.receiveFrom( buff, addr );
+		ubyte[PACKET_SIZE]	packetBuffer;
+		auto 				buff = DnetBuffer( packetBuffer );
+		DnetAddress			addr;
+
+		int	size = loginSocket.receiveFrom( buff, addr );
 
 		while ( size > 0 ) {
 			// check for undersize packet
@@ -991,9 +1033,7 @@ public class DnetCollection {
 				continue;
 			}
 
-			char[PACKET_SIZE] packet;
-			char[]			reply;
-			char[]			cmd = buff.getBuffer[int.sizeof..$];
+			char[]			cmd = cast( char[] )buff.getBuffer[int.sizeof..$];
 			try {
 				std.utf.validate( cmd );
 			}
@@ -1012,14 +1052,13 @@ public class DnetCollection {
 					}
 
 					// send it back
-					reply = sformat( packet, "challenge_response %s", challenges[addr.toString()] );
-					sendOOB( loginSocket, reply, addr );
+					sendOOB( addr, "challenge_response %s", challenges[addr.toString()] );
 					break;
 
 				case "connection_request":
 					if ( args.length != 4 ) {
 						writefln( "%s: reject: malformed connection request", addr );
-						sendOOB( loginSocket, "message \"malformed connection request\"", addr );
+						sendOOB( addr, "message \"malformed connection request\"" );
 						break;
 					}
 
@@ -1032,14 +1071,13 @@ public class DnetCollection {
 					}
 					catch ( ConvError e ) {
 						writefln( "%s: reject: %s", addr, e );
-						reply = sformat( packet, "message \"%s\"", e );
-						sendOOB( loginSocket, reply, addr );
+						sendOOB( addr, "message \"%s\"", e );
 						break;
 					}
 
 					if ( protoVer != PROTOCOL_VERSION ) {
 						writefln( "%s: reject: wrong protocol version", addr );
-						sendOOB( loginSocket, "message \"wrong protocol version\"", addr );
+						sendOOB( addr, "message \"wrong protocol version\"" );
 						break;
 					}
 
@@ -1048,13 +1086,13 @@ public class DnetCollection {
 						// is the challenge valid?
 						if ( challengeNumber != challenges[addr.toString()].number ) {
 							writefln( "%s: reject: invalid challenge" );
-							sendOOB( loginSocket, "message \"invalid challenge\"", addr );
+							sendOOB( addr, "message \"invalid challenge\"" );
 							break;
 						}
 					}
 					else {
 						writefln( "%s: reject: no challenge" );
-						sendOOB( loginSocket, "message \"no challenge\"", addr );
+						sendOOB( addr, "message \"no challenge\"" );
 						break;
 					}
 
@@ -1063,8 +1101,7 @@ public class DnetCollection {
 					// acknowledge the user of a new connection
 					if ( !onConnect( addr, args[3], reason ) ) {
 						writefln( "%s: rejected by user: %s", addr, reason );
-						reply = sformat( packet, "message \"%s\"", reason );
-						sendOOB( loginSocket, reply, addr );
+						sendOOB( addr, "message \"%s\"", reason );
 						break;
 					}
 
@@ -1082,8 +1119,7 @@ public class DnetCollection {
 
 					// send connection acknowledgement to the remote host
 					auto DnetAddress	inbandAddress = connections[addr.toString()].socket.getLocalAddress();
-					reply = sformat( packet, "connection_response %s %d %s %d", inbandAddress.toAddrString, inbandAddress.port, addr.toAddrString, addr.port );
-					sendOOB( loginSocket, reply, addr );
+					sendOOB( addr, "connection_response %s %d %s %d", inbandAddress.toAddrString, inbandAddress.port, addr.toAddrString, addr.port );
 					break;
 
 				default:
@@ -1093,13 +1129,14 @@ public class DnetCollection {
 					break;
 			}
 
-			size = loginSocket.receiveFrom(buff, addr);
+			size = loginSocket.receiveFrom( buff, addr );
 		}
 	}
 
 	private void listenForInBand() {
-		DnetBuffer buff;
-		DnetAddress addr;
+		ubyte[PACKET_SIZE]	packetBuffer;
+		auto				buff = DnetBuffer( packetBuffer );
+		DnetAddress			addr;
 
 		int size = inbandSocket.receiveFrom( buff, addr );
 		while ( size > 0 ) {

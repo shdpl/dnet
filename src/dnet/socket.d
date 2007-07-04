@@ -27,24 +27,24 @@ import dnet.buffer;
 */
 public class DnetAddress {
 
-        private {
-                InternetAddress Address;
-        }
+	private {
+		InternetAddress Address;
+	}
 
-        /**
-        Any local address.
-        */
-        this(ushort port){
-                Address = new InternetAddress( port );
-        }
+	/**
+		Any local address.
+	 */
+	this(ushort port){
+		Address = new InternetAddress( port );
+	}
 
-        this(uint ip, ushort port){
-                Address = new InternetAddress( ip, port );
-        }
+	this(uint ip, ushort port){
+		Address = new InternetAddress( ip, port );
+	}
 
-        this(char[] ip, ushort port){
-                Address = new InternetAddress( ip, port );
-        }
+	this(char[] ip, ushort port){
+		Address = new InternetAddress( ip, port );
+	}
 
 	char[]	toAddrString() {
 		return Address.toAddrString();
@@ -61,9 +61,9 @@ public class DnetAddress {
 			return 1;
 	}
 
-        public char[] toString(){
-                return Address.toString();
-        }
+	public char[] toString(){
+		return Address.toString();
+	}
 }
 
 
@@ -107,16 +107,18 @@ public class DnetSocket {
 		bytesSent += buff.length;
 	}
 
-	public int receiveFrom(out DnetBuffer buff, out DnetAddress address){
-		char[1400] tmp;
-		Address addr;
-		int size = Socket.receiveFrom(tmp, addr);
-		if (size > 0) {
-			buff = new DnetBuffer( new char[size] );
+	public int receiveFrom( ref DnetBuffer buff, out DnetAddress address ) {
+		buff.clear();
+
+		ubyte[1400]	tmp;
+		Address		addr;
+		int			size = Socket.receiveFrom( tmp, addr );
+
+		if ( size > 0 ) {
 			buff.putData( tmp[0..size] );
 			bytesReceived += size;
 		}
-		address = new DnetAddress((cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port());
+		address = new DnetAddress( (cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port() );
 
 		//if (size > 0){
 	        //        writefln("Socket %s receives from %s data: [%s]",

@@ -14,19 +14,26 @@ module dnet.buffer;
 
 
 /**
-A fancy name for byte buffer or char[]
-*/
-package class DnetBuffer {
+	A fancy name for byte buffer or ubyte[]
+ */
+package struct DnetBuffer {
 	private {
-		char[]	buffer;
+		ubyte[]	buffer;
 		size_t	bytesWritten;
 		size_t	readingPos;
 		bool	overflowed;
 	}
 
-	this( char[] theBuffer ) {
-		buffer = theBuffer;
-		bytesWritten = 0;
+	/// Constructor.
+	static DnetBuffer opCall( ubyte[] theBuffer ) {
+		DnetBuffer	buff;
+
+		with ( buff ) {
+			buffer = theBuffer;
+			bytesWritten = 0;
+		}
+
+		return buff;
 	}
 
 	/// Returns true if buffer has been overflown.
@@ -60,7 +67,7 @@ package class DnetBuffer {
 		return readingPos;
 	}
 
-	private void writeBytes( char[] bytes ) {
+	private void writeBytes( ubyte[] bytes ) {
 		if ( bytesWritten + bytes.length > buffer.length ) {
 			overflowed = true;
 			// overflow!
@@ -74,30 +81,30 @@ package class DnetBuffer {
 		bytesWritten += bytes.length;
 	}
 
-	private char[] readBytes( int numBytes ) {
+	private ubyte[] readBytes( int numBytes ) {
 		if ( readingPos + numBytes > bytesWritten ) {
 			// underflow!
 			overflowed = true;
 			return null;
 		}
 
-		char[] bytes = buffer[readingPos..readingPos+numBytes];
+		ubyte[] bytes = buffer[readingPos..readingPos+numBytes];
 		readingPos += numBytes;
 
 		return bytes;
 	}
 
-	public void putData( char[] data ) {
+	public void putData( ubyte[] data ) {
 		writeBytes( data );
 	}
 
 	public void putUbyte( ubyte value ) {
-		char[1]		data = value;
+		ubyte[1]	data = value;
 		writeBytes( data );
 	}
 
 	public void putInt( int value ) {
-		char[4]	data;
+		ubyte[4]	data;
 
 		data[0] = value & 0xFF;
 		data[1] = ( value >> 8 ) & 0xFF;
@@ -108,7 +115,7 @@ package class DnetBuffer {
 	}
 
 	public void putUshort( ushort value ) {
-		char[2]	data;
+		ubyte[2]	data;
 
 		data[0] = value & 0xFF;
 		data[1] = value >> 8;
@@ -116,7 +123,7 @@ package class DnetBuffer {
 		writeBytes( data );
 	}
 
-	public void putString( char[] value )
+	public void putString( ubyte[] value )
 	in {
 		assert( value.length );
 	}
@@ -126,7 +133,7 @@ package class DnetBuffer {
 	}
 
 	public ubyte readUbyte() {
-		char[]	data = readBytes( 1 );
+		auto data = readBytes( 1 );
 		if ( overflowed ) {
 			return 0;
 		}
@@ -134,7 +141,7 @@ package class DnetBuffer {
 	}
 
 	public uint readInt() {
-		char[] data = readBytes( 4 );
+		auto data = readBytes( 4 );
 		if ( overflowed ) {
 			return 0;
 		}
@@ -142,27 +149,27 @@ package class DnetBuffer {
 	}
 
 	public ushort readUshort() {
-		char[] data = readBytes( 2 );
+		auto data = readBytes( 2 );
 		if ( overflowed ) {
 			return 0;
 		}
 		return data[0] + ( data[1] << 8 );
 	}
 
-	public char[] readString() {
+	public ubyte[] readString() {
 		size_t	length = readUshort();
-		char[]	data = readBytes( length );
+		auto	data = readBytes( length );
 		if ( overflowed ) {
-			return "";
+			return null;
 		}
 		return data;
 	}
 
-	public char[] dup(){
+	public ubyte[] dup(){
 		return buffer[0..bytesWritten].dup;
 	}
 
-	public char[] getBuffer() {
+	public ubyte[] getBuffer() {
 		return buffer[0..bytesWritten];
 	}
 }
