@@ -1,8 +1,14 @@
+
+version ( Tango ) {
+	import tango.io.Stdout;
+}
+else {
+	import std.stdio;
+}
+
 import dnet.dnet;
-import std.stdio;
 
 int main() {
-
 	DnetCollection s = new DnetCollection( new DnetAddress("localhost", 3333), new DnetAddress("localhost", 3003) );
 	while(true){
 		s.emit();

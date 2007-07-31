@@ -13,8 +13,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 module dnet.fifo;
 
-private import std.stdio;
-private import std.string;
+version ( Tango ) {
+	private import tango.io.Stdout;
+}
+else {
+	private import std.stdio;
+	private import std.string;
+}
 
 /**
 	Auto resizeable FIFO (First In First Out) container that stores ubyte[] type of unlimited length.
@@ -102,8 +107,15 @@ public struct DnetFifo {
 	/**
 	Returns convenient debug message describing object (capacity, length, position of indexes etc.).
 	*/
-	public char[] toString(){
-		return format("<FifoQueue - capacity %d length %d first %d last %d>", Capacity, Length, First, Last);
+	version ( Tango ) {
+		public char[] toUtf8(){
+			return "";
+		}
+	}
+	else {
+		public char[] toString(){
+			return format("<FifoQueue - capacity %d length %d first %d last %d>", Capacity, Length, First, Last);
+		}
 	}
 
 	unittest {
@@ -124,7 +136,12 @@ public struct DnetFifo {
 			q.put(cast(ubyte[])"a");
 			assert(cast(char[])q.get() == "a");
 		}
-		writefln("DnetFifo unittest PASS");
+		version ( Tango ) {
+			Stdout("DnetFifo unittest PASS\n");
+		}
+		else {
+			writefln("DnetFifo unittest PASS");
+		}
 	}
 
 }

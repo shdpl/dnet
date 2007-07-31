@@ -1,8 +1,13 @@
 import dnet.dnet;
-import std.stdio;
+
+version ( Tango ) {
+	import tango.io.Stdout;
+}
+else {
+	import std.stdio;
+}
 
 int main() {
-
 	DnetConnection c = new DnetConnection();
 	c.connectTo( new DnetAddress( "localhost", 3333 ) );
 
@@ -19,7 +24,12 @@ int main() {
 		t += DnetTime();
 
 		if (t > 1000){
-			writefln("got %d packets per sec, ping %d", i, c.getLatency());
+			version ( Tango ) {
+				Stdout.format("got {0} packets per sec, ping {1}", i, c.getLatency()).newline;
+			}
+			else {
+				writefln("got %d packets per sec, ping %d", i, c.getLatency());
+			}
 			t = 0;
 			i = 0;
 		}

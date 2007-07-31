@@ -12,9 +12,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 module dnet.socket;
 
-import std.stdio;
-import std.socket;
-import std.c.time;
+version ( Tango ) {
+	import tango.io.Stdout;
+	import tango.net.Socket;
+	import tango.net.InternetAddress;
+
+	class UdpSocket: Socket {
+		/// Constructs a blocking UDP Socket.
+		this( AddressFamily family ) {
+			super( family, SocketType.DGRAM, ProtocolType.UDP );
+		}
+	}
+}
+else {
+	import std.stdio;
+	import std.socket;
+	import std.c.time;
+}
+
 version (Windows) {
 	pragma(lib, "ws2_32.lib");
 	pragma(lib, "wsock32.lib");
@@ -61,8 +76,16 @@ public class DnetAddress {
 			return 1;
 	}
 
-	public char[] toString(){
-		return Address.toString();
+	version ( Tango ) {
+		public char[] toUtf8(){
+			return Address.toUtf8();
+		}
+		alias toUtf8 toString;
+	}
+	else {
+		public char[] toString(){
+			return Address.toString();
+		}
 	}
 }
 
@@ -111,15 +134,24 @@ public class DnetSocket {
 		buff.clear();
 
 		ubyte[1400]	tmp;
-		Address		addr;
+		version ( Tango ) {
+			Address	addr = Socket.newFamilyObject();
+		}
+		else {
+			Address	addr;
+		}
 		int			size = Socket.receiveFrom( tmp, addr );
 
 		if ( size > 0 ) {
 			buff.putData( tmp[0..size] );
 			bytesReceived += size;
 		}
-		address = new DnetAddress( (cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port() );
-
+		version ( Tango ) {
+			address = new DnetAddress( (cast(IPv4Address)addr).addr(), (cast(IPv4Address)addr).port() );
+		}
+		else {
+			address = new DnetAddress( (cast(InternetAddress)addr).addr(), (cast(InternetAddress)addr).port() );
+		}
 		//if (size > 0){
 	        //        writefln("Socket %s receives from %s data: [%s]",
         	//                getLocalAddress.toString(),
@@ -129,5 +161,4 @@ public class DnetSocket {
 		//}
 		return size;
 	}
-
 }

@@ -12,30 +12,60 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 module dnet.utils;
 
-
-import std.c.time;
-import std.date;
+version ( Tango ) {
+	import tango.io.Stdout;
+	import tango.util.time.Clock;
+	import tango.sys.win32.UserGdi;
+}
+else {
+	import std.stdio;
+	import std.c.time;
+	import std.date;
+}
 
 /**
 Sleep for number of miliseconds.
 */
 public void DnetSleep(uint miliseconds){
-	version(Windows)
-		msleep(miliseconds);
-	else
-		usleep(miliseconds * 1000);
+	version ( Tango ) {
+		version ( Windows ) {
+			Sleep( miliseconds );
+		}
+		else {
+			// nothing!
+		}
+	}
+	else {
+		version(Windows) {
+			msleep(miliseconds);
+		}
+		else {
+			usleep(miliseconds * 1000);
+		}
+	}
 }
 
 /**
 Returns number of miliseconds passed since last call of this func.
 */
 public uint DnetTime(){
-	static long t = 0;
-	if (t == 0)
+	version ( Tango ) {
+		static long t;
+		if ( !t ) {
+			t = Clock.now();
+		}
+		long old = t;
+		t = Clock.now();
+		return cast( uint )( ( t - old ) / ( Time.TicksPerSecond / 1000 ) );
+	}
+	else {
+		static long t = 0;
+		if (t == 0)
+			t = getUTCtime();
+		long old = t;
 		t = getUTCtime();
-	long old = t;
-	t = getUTCtime();
-	return cast(uint) ( (t - old) / (TicksPerSecond / 1000) );
+		return cast(uint) ( (t - old) / (TicksPerSecond / 1000) );
+	}
 	//return 0;
 }
 
@@ -135,20 +165,12 @@ unittest {
 	assert( tokens[2] == "distant" );
 	assert( tokens[3] == "stars" );
 	assert( tokens[4] == "brings less voices to entertain us" );
+
+	version ( Tango ) {
+		Stdout( "dnet.utils.splitIntoTokens unittest PASS\n" );
+	}
+	else {
+		writefln( "dnet.utils.splitIntoTokens unittest PASS\n" );
+	}
 }
 
-template BYTES2BITS( int n ) {
-	const int BYTES2BITS = n << 3;
-}
-
-template BITS2BYTES( int n ) {
-	const int BITS2BYTES = n >> 3;
-}
-
-unittest {
-	int	a = BYTES2BITS!( 1 );
-	assert( a == 8 );
-
-	int b = BITS2BYTES!( 32 );
-	assert( b == 4 );
-}

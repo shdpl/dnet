@@ -12,13 +12,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 module dnet.connection;
 
-private import std.conv;
-private import std.stdarg;
-private import std.stdio;
-private import std.random;
-private import std.string;
-private import std.date;
-private import std.utf;
+version ( Tango ) {
+	private import tango.io.Stdout;
+	private import tango.text.convert.Integer;
+	private import tango.text.convert.Layout;
+	private import tango.core.Vararg;
+	private import tango.math.Random;
+	private import tango.core.Exception;
+	private import tango.util.time.Clock;
+
+	private Layout!( char )	layout;
+
+	static this() {
+		layout = new Layout!( char );
+	}
+}
+else {
+	private import std.conv;
+	private import std.stdarg;
+	private import std.stdio;
+	private import std.random;
+	private import std.string;
+	private import std.date;
+	private import std.utf;
+}
 
 private import dnet.socket;
 private import dnet.fifo;
@@ -26,57 +43,63 @@ private import dnet.buffer;
 private import dnet.utils;
 
 private import dnet.internal.flowinfo;
+private import dnet.internal.protocol;
 private import dnet.internal.window;
 
-public const {
-	size_t	PACKET_SIZE			= 1400;		/// Max. size of a single packet, in bytes
-	size_t	MESSAGE_SIZE		= 16384;	/// Max. size of a message, in bytes
-}
-
 private const {
-	int		FRAGMENT_SIZE		= PACKET_SIZE - 100;
 	int		PROTOCOL_VERSION	= 1;
 }
 
-private void sendOOB( DnetSocket socket, DnetAddress to, TypeInfo[] arguments, va_list argptr ) {
-	char[PACKET_SIZE]	s;
-	*cast( int * )s = -1;
+version ( Tango ) {
+	private void sendOOB( DnetSocket socket, DnetAddress to, char[] fmt, TypeInfo[] arguments, Arg argptr ) {
+		char[PACKET_SIZE]	result;
+		*cast( int * )result = -1;
 
-	size_t i = int.sizeof;
-
-	void putc( dchar c ) {
-		if ( c <= 0x7F ) {
-			if ( i >= s.length ) {
-				throw new Exception( "dnet.connection.DnetConnection.sendOOB" );
-			}
-			s[i] = cast( char )c;
-			++i;
-		}
-		else {
-			char[4] buf;
-			char[] b;
-
-			b = std.utf.toUTF8( buf, c );
-			if ( i + b.length > s.length ) {
-				throw new Exception( "dnet.connection.DnetConnection.sendOOB" );
-			}
-			s[i..i + b.length] = b[];
-			i += b.length;
-		}
+		char[] s = layout.sprint( result[int.sizeof..$], fmt, arguments, argptr );
+		socket.sendTo( result[0..s.length+int.sizeof], to );
 	}
+}
+else {
+	private void sendOOB( DnetSocket socket, DnetAddress to, TypeInfo[] arguments, va_list argptr ) {
+		char[PACKET_SIZE]	s;
+		*cast( int * )s = -1;
 
-	std.format.doFormat( &putc, arguments, argptr );
+		size_t i = int.sizeof;
 
-	socket.sendTo( s[0..i], to );
+		void putc( dchar c ) {
+			if ( c <= 0x7F ) {
+				if ( i >= s.length ) {
+					throw new Exception( "dnet.connection.DnetConnection.sendOOB" );
+				}
+				s[i] = cast( char )c;
+				++i;
+			}
+			else {
+				char[4] buf;
+				char[] b;
+
+				b = std.utf.toUTF8( buf, c );
+				if ( i + b.length > s.length ) {
+					throw new Exception( "dnet.connection.DnetConnection.sendOOB" );
+				}
+				s[i..i + b.length] = b[];
+				i += b.length;
+			}
+		}
+
+		std.format.doFormat( &putc, arguments, argptr );
+
+		socket.sendTo( s[0..i], to );
+	}
 }
 
 /*
 packet header structure
 -----------------------
 31	sequence
-1	packet flags flag
+1	fragment flag
 32	reliable acknowledge
-[8	packet flags]
+8	packet flags
 
 CMD_BYTES.RELIABLE
 ubyte count
@@ -87,7 +110,6 @@ count times {
 CMD_BYTES.UNRELIABLE
 ubyte[] data
 -----------------------
-For the remote side, reliable and unreliable data are undistinguashable.
 Reliable data is queued, then passed to the remote side. It will be retransmitted until
 remote side acknowledges of the delivery. DnetConnection will try to combine multiple
 small chunks of reliable data into a bigger one. Unreliable data will be appended
@@ -116,19 +138,13 @@ public class DnetConnection {
 		// packet flags
 		enum Flags {
 			Disconnecting	= ( 1 << 0 ),	// remote side is disconnecting
-			Fragmented		= ( 1 << 1 ),	// packet is a fragment
 		}
 
 		// protocol command bytes
 		enum CMD_BYTES {
+			BAD,
 			RELIABLE,
 			UNRELIABLE,
-		}
-
-		// fragment buffer
-		struct Fragment {
-			char[MESSAGE_SIZE]	buffer = 0;
-			int					length;
 		}
 
 		DnetSocket	socket;					// socket used for communications
@@ -142,25 +158,13 @@ public class DnetConnection {
 		long		lastReceive;			// time the last packet has been received
 		long		lastTransmit;			// time the last packet has been sent
 
-		// outgoing fragments buffer
-		bool		outFragments;
-		Fragment	outFragment;
-		int			outFragmentOffset;
-
-		// incoming fragments buffer
-		int			inFragmentSequence;
-		Fragment	inFragment;
-
-		// flow control information
-		FlowInfo	flowInfo;
+		Protocol	protocol;				// dispatches packets
+		FlowInfo	flowInfo;				// stores flow control information
 
 		// data buffers
-		DnetFifo	sendQueue;
+		DnetFifo	sendQueue, receiveQueue;
 		DnetWindow	reliableWindow;
-		DnetFifo	receiveQueue;
 
-		int			outgoingSequence = 1;	// outgoing packet sequence number
-		int			incomingSequence;		// incoming packet sequence number
 		int			outgoingAcknowledge;	// last outgoingSequence the remote side has
 											// received
 											// this comes in handy when it gets to calculating
@@ -199,21 +203,13 @@ public class DnetConnection {
 		remoteAddress = theRemoteAddress;
 		publicAddress = thePublicAddress;
 
-		outgoingSequence 	= outgoingSequence.init;
-		incomingSequence 	= incomingSequence.init;
 		outgoingAcknowledge	= outgoingAcknowledge.init;
 		lastReliableSequence = lastReliableSequence.init;
 		reliableAcknowledge = reliableAcknowledge.init;
 
+		protocol.clear();
 		reliableWindow.clear();
 		flowInfo.reset();
-
-		outFragments = false;
-		outFragment = outFragment.init;
-		outFragmentOffset = 0;
-
-		inFragmentSequence = 0;
-		inFragment = inFragment.init;
 
 		state = STATE.CONNECTED;
 
@@ -246,7 +242,12 @@ public class DnetConnection {
 	*/
 	final public void connectTo( DnetAddress theRemoteAddress, char[] theUserData = null, DnetAddress theLocalAddress = null )
 	in {
-		std.utf.validate( theUserData );
+		version ( Tango ) {
+			// TODO
+		}
+		else {
+			std.utf.validate( theUserData );
+		}
 		assert( theUserData.length <= 1024 );
 	}
 	body {
@@ -309,14 +310,14 @@ public class DnetConnection {
 	/**
 		Sets/gets available _bandwidth, in bps.
 	*/
-	public void bandwidth( int newBandwidth ) {
+	final public void bandwidth( int newBandwidth ) {
 		flowInfo.availableBandwidth = newBandwidth;
 	}
 
 	/**
 		ditto
 	*/
-	public int bandwidth() {
+	final public int bandwidth() {
 		return flowInfo.availableBandwidth;
 	}
 
@@ -324,7 +325,7 @@ public class DnetConnection {
 		Returns true if the bandwidth won't be chocked by sending another message.
 		Elsewise false is returned.
 	*/
-	public bool readyToTransmit() {
+	final public bool readyToTransmit() {
 		return flowInfo.readyToTransmit();
 	}
 
@@ -344,7 +345,12 @@ public class DnetConnection {
 			// if we would be losing a reliable data that hasn't been acknowledged,
 			// we must drop the connection
 			if ( reliableWindow.putSequence - reliableAcknowledge > RELIABLE_BACKUP ) {
-				writefln( "irrecoverable loss of reliable data, disconnecting" );
+				version ( Tango ) {
+					Stdout( "irrecoverable loss of reliable data, disconnecting" ).newline;
+				}
+				else {
+					writefln( "irrecoverable loss of reliable data, disconnecting" );
+				}
 				disconnect();
 				return;
 			}
@@ -360,8 +366,15 @@ public class DnetConnection {
 	/**
 		Sends an out-of-band packet.
 	*/
-	final public void sendOOB( DnetAddress to, ... ) {
-		.sendOOB( socket, to, _arguments, _argptr );
+	version ( Tango ) {
+		final public void sendOOB( DnetAddress to, char[] fmt, ... ) {
+			.sendOOB( socket, to, fmt, _arguments, _argptr );
+		}
+	}
+	else {
+		final public void sendOOB( DnetAddress to, ... ) {
+			.sendOOB( socket, to, _arguments, _argptr );
+		}
 	}
 
 	/**
@@ -380,7 +393,7 @@ public class DnetConnection {
 		}
 
 		// receive
-		ubyte[PACKET_SIZE]	packetBuffer;
+		PacketBuf			packetBuffer;
 		auto				buff = DnetBuffer( packetBuffer );
 		scope DnetAddress	addr;
 
@@ -388,7 +401,12 @@ public class DnetConnection {
 		while ( size > 0 ) {
 			if ( size < 4 ) {
 				// check for undersize packet
-				writefln( "undersize packet from %s", addr );
+				version ( Tango ) {
+					Stdout.format( "undersize packet from {}", addr ).newline;
+				}
+				else {
+					writefln( "undersize packet from %s", addr );
+				}
 				size = socket.receiveFrom( buff, addr );
 				continue;
 			}
@@ -409,7 +427,12 @@ public class DnetConnection {
 		if ( state >= STATE.CONNECTED ) {
 			long	dropPoint = getUTCtime() - 8000;
 			if ( lastReceive < dropPoint ) {
-				writefln( "connection timed-out" );
+				version ( Tango ) {
+					Stdout( "connection timed-out" ).newline;
+				}
+				else {
+					writefln( "connection timed-out" );
+				}
 				state = STATE.DISCONNECTED;
 			}
 		}
@@ -442,36 +465,10 @@ public class DnetConnection {
 
 		// transmit fragments of previous message,
 		// if it was too large to send at once
-/*		if ( outFragments ) {
-			transmitNextFragment();
+		if ( protocol.hasUnsentFragments ) {
+			protocol.dispatchNextFragment( socket, remoteAddress );
 			return;
-		}*/
-
-		//
-		// write down packet payload
-		//
-
-		ubyte[PACKET_SIZE]	dataBuffer;
-		auto				data = DnetBuffer( dataBuffer );
-
-		writePayload( data );
-
-		//
-		// fragment large messages
-		//
-
-/*		if ( data.length >= FRAGMENT_SIZE ) {
-			outFragments = true;
-			outFragmentOffset = 0;
-			outFragment.length = data.length;
-			outFragment.buffer[0..data.length] = data.getBuffer();
-			transmitNextFragment();		// send the first fragment
-			return;
-		}*/
-
-		//
-		// write the packet
-		//
+		}
 
 		uint setPacketFlags() {
 			uint	flags;
@@ -487,79 +484,22 @@ public class DnetConnection {
 		// set packet flags
 		uint packetFlags = setPacketFlags();
 
-		ubyte[PACKET_SIZE]	packet;
-		auto				buff = DnetBuffer( packet );
+		// write down message payload
+		MsgBuf	msgBuffer = void;
+		auto	msg = DnetBuffer( msgBuffer );
 
-		// write packet header
-		writePacketHeader( packetFlags, buff );
+		writePayload( packetFlags, msg );
 
-		// write packet data
-		buff.putData( data.getBuffer() );
+		// dispatch a packet
+		protocol.dispatch( msg.getBuffer(), socket, remoteAddress );
 
-		// send the packet
-		socket.sendTo( buff.getBuffer(), remoteAddress );
-//		writefln( "--> %s %d %d", remoteAddress, reliableSequence, reliableAcknowledge );
-
-		// increment outgoing sequence
-		outgoingSequence++;
-
-		// mark time we last sent a packet
+		// mark the time
 		lastTransmit = getUTCtime();
 
 		// update data flow info
-		flowInfo.dataSent( outgoingSequence, data.length );
+		flowInfo.dataSent( protocol.sequence, msg.length );
 	}
 
-	private void writePacketHeader( int packetFlags, ref DnetBuffer buff ) {
-		if ( packetFlags ) {
-			buff.putInt( outgoingSequence | ( 1 << 31 ) );
-
-			// write packet flags
-			buff.putUbyte( packetFlags );
-		}
-		else {
-			buff.putInt( outgoingSequence );
-		}
-
-		buff.putInt( outgoingAcknowledge );
-		buff.putInt( lastReliableSequence );
-	}
-/*
-	private void transmitNextFragment() {
-		assert( outFragments );
-
-		int		fragmentLength;
-
-		if ( outFragmentOffset + FRAGMENT_SIZE > outFragment.length ) {
-			fragmentLength = outFragment.length - outFragmentOffset;
-		}
-		else {
-			fragmentLength = FRAGMENT_SIZE;
-		}
-
-		char[PACKET_SIZE]	packet;
-		scope DnetBuffer	buff = new DnetBuffer( packet );
-
-		// write the packet header
-		writePacketHeader( Flags.Fragmented, buff );
-
-		// write fragment offset and length
-		buff.putUshort( outFragmentOffset );
-		buff.putUshort( fragmentLength );
-
-		// write down the packet data
-		buff.putData( outFragment.buffer[outFragmentOffset..outFragmentOffset+fragmentLength] );
-		outFragmentOffset += fragmentLength;
-
-		// send the packet
-		socket.sendTo( buff.getBuffer(), remoteAddress );
-
-		if ( outFragmentOffset == outFragment.length && fragmentLength != FRAGMENT_SIZE ) {
-			outFragments = false;
-			outgoingSequence++;
-		}
-	}
-*/
 	private void transmitConnectionRequest() {
 		if ( state == STATE.CHALLENGING || state == STATE.CONNECTING ) {
 			// send connection requests once in five seconds
@@ -567,14 +507,19 @@ public class DnetConnection {
 				return;	// time hasn't come yet
 			}
 
-
 			switch ( state ) {
 				case STATE.CHALLENGING:
 					sendOOB( remoteAddress, "challenge_request" );
 					break;
 				case STATE.CONNECTING:
-					sendOOB( remoteAddress, "connection_request %d %d \"%s\"",
-										PROTOCOL_VERSION, challengeNumber, userData );
+					version ( Tango ) {
+						sendOOB( remoteAddress, "connection_request {0} {1} \"{2}\"",
+											PROTOCOL_VERSION, challengeNumber, userData );
+					}
+					else {
+						sendOOB( remoteAddress, "connection_request %d %d \"%s\"",
+											PROTOCOL_VERSION, challengeNumber, userData );
+					}
 					break;
 			}
 
@@ -593,47 +538,43 @@ public class DnetConnection {
 		// check in-bound packets
 		// check unwanted packet
 		if ( state < STATE.CONNECTED ) {
-			writefln( "unwanted packet from %s", addr );
+			version ( Tango ) {
+				Stdout.format( "unwanted packet from {}", addr ).newline;
+			}
+			else {
+				writefln( "unwanted packet from %s", addr );
+			}
 			return;
 		}
 
 		// check if the packet is not from the server
 		if ( addr != remoteAddress ) {
-			writefln( "packet not from server: %s (should be %s)", addr, remoteAddress );
+			version ( Tango ) {
+				Stdout.format( "packet not from server: {0} (should be {1})", addr, remoteAddress ).newline;
+			}
+			else {
+				writefln( "packet not from server: %s (should be %s)", addr, remoteAddress );
+			}
 			return;
 		}
 
 		// mark time we last received a packet
 		lastReceive = getUTCtime();
 
-		// read packet header
-		int		sequence = buff.readInt();
+		if ( !protocol.process( buff ) ) {
+			return;
+		}
 
 		uint	packetFlags;
 
-		if ( sequence & ( 1 << 31 ) ) {
-			sequence &= ~( 1 << 31 );
-
-			// read packet flags
-			packetFlags = buff.readUbyte();
-		}
-
-//		writefln( "drop %d", sequence - ( IncomingSequence + 1 ) );
-
-		// check sequences
-		if ( sequence <= incomingSequence ) {
-			return;	// packet is stale
-		}
+		// read packet flags
+		packetFlags = buff.readUbyte();
 
 		// check packet flags
 		checkPacketFlags( packetFlags );
 
 		outgoingAcknowledge = buff.readInt();
 		reliableAcknowledge = buff.readInt();
-
-		// assemble fragments
-
-		incomingSequence = sequence;
 
 		// parse the packet
 		parsePayload( buff );
@@ -646,46 +587,82 @@ public class DnetConnection {
 
 	private void processOutOfBand( DnetBuffer buff, DnetAddress addr ) {
 		char[]			cmd = cast( char[] )buff.getBuffer[int.sizeof..$];
-		try {
-			std.utf.validate( cmd );
+		version ( Tango ) {
+			// TODO
 		}
-		catch ( UtfException e ) {
-			writefln( "received invalid command: %s", e );
-			return;
+		else {
+			try {
+				std.utf.validate( cmd );
+			}
+			catch ( UtfException e ) {
+				writefln( "received invalid command: %s", e );
+				return;
+			}
 		}
 		scope char[][]	args = cmd.splitIntoTokens();
 
 		switch ( args[0] ) {
 			case "message":
 				if ( args.length != 2 ) {
-					writefln( "malformed message received" );
+					version ( Tango ) {
+						Stdout( "malformed message received" ).newline;
+					}
+					else {
+						writefln( "malformed message received" );
+					}
 					break;
 				}
-				writefln( "message: %s", args[1] );
+				version ( Tango ) Stdout.format( "message: {}", args[1] ).newline;
+				else writefln( "message: %s", args[1] );
 				onMessage( args[1] );
 				break;
 			case "challenge_response":
 				if ( state != STATE.CHALLENGING ) {
 					if ( state == STATE.CONNECTING ) {
-						writefln( "duplicate challenge received" );
+						version ( Tango ) {
+							Stdout( "duplicate challenge received" ).newline;
+						}
+						else {
+							writefln( "duplicate challenge received" );
+						}
 					}
 					else {
-						writefln( "unwanted challenge received" );
+						version ( Tango ) {
+							Stdout( "unwanted challenge received" ).newline;
+						}
+						else {
+							writefln( "unwanted challenge received" );
+						}
 					}
 					break;
 				}
 
 				if ( addr != remoteAddress ) {
-					writefln( "challenge not from server: %s", addr );
+					version ( Tango ) {
+						Stdout( "challenge not from server: {}", addr ).newline;
+					}
+					else {
+						writefln( "challenge not from server: %s", addr );
+					}
 					break;
 				}
 
 				if ( args.length != 2 ) {
-					writefln( "malformed challenge received" );
+					version ( Tango ) {
+						Stdout( "malformed challenge received" ).newline;
+					}
+					else {
+						writefln( "malformed challenge received" );
+					}
 					break;
 				}
 
-				challengeNumber = toUint( args[1] );
+				version ( Tango ) {
+					challengeNumber = toInt!( char )( args[1] );
+				}
+				else {
+					challengeNumber = toUint( args[1] );
+				}
 
 				state = STATE.CONNECTING;	// challenging -> connecting
 				lastTransmit = -9999;		// connection request will fire immediately
@@ -693,33 +670,64 @@ public class DnetConnection {
 			case "connection_response":
 				if ( state != STATE.CONNECTING ) {
 					if ( state == STATE.CONNECTED ) {
-						writefln( "duplicate connection response received" );
+						version ( Tango ) {
+							Stdout( "duplicate connection response received" ).newline;
+						}
+						else {
+							writefln( "duplicate connection response received" );
+						}
 					}
 					else {
-						writefln( "unwanted connection response received" );
+						version ( Tango ) {
+							Stdout( "unwanted connection response received" ).newline;
+						}
+						else {
+							writefln( "unwanted connection response received" );
+						}
 					}
 					break;
 				}
 				if ( args.length != 5 ) {
-					writefln( "malformed connection response" );
+					version ( Tango ) {
+						Stdout( "malformed connection response" ).newline;
+					}
+					else {
+						writefln( "malformed connection response" );
+					}
 					break;
 				}
 				ushort	remotePort, publicPort;
-				try {
-					remotePort = toUshort( args[2] );
-					publicPort = toUshort( args[4] );
-					
+
+				version ( Tango ) {
+					try {
+						remotePort = toInt!( char )( args[2] );
+						publicPort = toInt!( char )( args[4] );
+					}
+					catch ( IllegalArgumentException e ) {
+						Stdout.format( "bad connection response: {}", e ).newline;
+					}
 				}
-				catch ( ConvError e ) {
-					writefln( "bad connection respose: %s", e );
-					break;
+				else {
+					try {
+						remotePort = toUshort( args[2] );
+						publicPort = toUshort( args[4] );
+					}
+					catch ( ConvError e ) {
+						writefln( "bad connection respose: %s", e );
+						break;
+					}
 				}
 
 				setup( new DnetAddress( args[1], remotePort ), new DnetAddress( args[3], publicPort ) );	// connecting -> connected
 				break;
 			default:
 				if ( !onOOBpacket( args ) ) {
-					writefln( "unrecognised OOB packet: %s", cmd );
+					version ( Tango ) {
+						Stdout.format( "unrecognised OOB packet: {}", cmd ).newline;
+					}
+					else {
+						writefln( "unrecognised OOB packet: %s", cmd );
+					}
 				}
 				break;
 		}
@@ -728,7 +736,12 @@ public class DnetConnection {
 	/**
 		Writes down packet payload.
 	*/
-	private void writePayload( ref DnetBuffer buff ) {
+	private void writePayload( int flags, ref DnetBuffer buff ) {
+		buff.putUbyte( flags );
+
+		buff.putInt( outgoingAcknowledge );
+		buff.putInt( lastReliableSequence );
+
 		// write reliable data
 		buff.putUbyte( CMD_BYTES.RELIABLE );
 
@@ -775,7 +788,8 @@ public class DnetConnection {
 
 					if ( sequence > lastReliableSequence + 1 ) {
 						// we have lost some of the data, so drop the connection
-						writefln( "lost some reliable data" );
+						version ( Tango ) Stdout( "lost some reliable data" ).newline;
+						else writefln( "lost some reliable data" );
 						disconnect();
 						break;
 					}
@@ -819,8 +833,8 @@ public class DnetConnection {
 	This can be a server if you bind socket and listen 
 	or it can be a client connected to multiple points.
 
-	Collection is scalable enough to service up to 500 connections. It uses asynchronous
-	IO running in a single thread. The rationale behind this solution is that much more
+	Collection is scalable enough to service up to 500 connections. It uses a single non-blocking
+	socket running in a single thread. The rationale behind this solution is that much more
 	scalable game server (>500 connections) will most likely be developed to run in a
 	cluster. Authors deem they cannot implement a server-cluster architecture with
 	synchronous IO and multithreading. This is due to lack of the appropriate hardware.
@@ -835,12 +849,25 @@ public class DnetCollection {
 		class Challenge {
 			this( DnetAddress addr ) {
 				address	= addr;
-				number	= rand();
-				time	= getUTCtime();
+				version ( Tango ) {
+					number	= Random.shared.next(8192);
+					time	= Clock.now();
+				}
+				else {
+					number	= rand();
+					time	= getUTCtime();
+				}
 			}
 
-			char[] toString() {
-				return format( "%d", number );
+			version ( Tango ) {
+				char[] toUtf8() {
+					return .toUtf8( number );
+				}
+			}
+			else {
+				char[] toString() {
+					return format( "%d", number );
+				}
 			}
 
 			uint			number;		// challenge number
@@ -918,7 +945,7 @@ public class DnetCollection {
 		issueMessageEvents();
 
 		// transmit for each connection
-		foreach ( inout DnetConnection c; connections ) {
+		foreach ( ref DnetConnection c; connections ) {
 			c.transmit( false );
 		}
 	}
@@ -974,8 +1001,15 @@ public class DnetCollection {
 
 	}
 
-	private void sendOOB( DnetAddress to, ... ) {
-		.sendOOB( loginSocket, to, _arguments, _argptr );
+	version ( Tango ) {
+		private void sendOOB( DnetAddress to, char[] fmt, ... ) {
+			.sendOOB( loginSocket, to, fmt, _arguments, _argptr );
+		}
+	}
+	else {
+		private void sendOOB( DnetAddress to, ... ) {
+			.sendOOB( loginSocket, to, _arguments, _argptr );
+		}
 	}
 
 	private void cleanupConnections() {
@@ -986,7 +1020,12 @@ public class DnetCollection {
 
 			// delete disconnected connections
 			if ( c.state == DnetConnection.STATE.DISCONNECTED ) {
-				writefln( "%s: deleting disconnected connection", c.remoteAddress );
+				version ( Tango ) {
+					Stdout.format( "{}: deleting disconnected connection\n", c.remoteAddress ).newline;
+				}
+				else {
+					writefln( "%s: deleting disconnected connection", c.remoteAddress );
+				}
 				onDisconnect( c );
 				connections.remove( c.remoteAddress.toString() );
 				continue;
@@ -995,7 +1034,12 @@ public class DnetCollection {
 				continue;		// not connected
 			}
 			if ( c.lastReceive < dropPoint ) {
-				writefln( "deleting timed-out connection" );
+				version ( Tango ) {
+					Stdout( "deleting timed-out connection\n" ).newline;
+				}
+				else {
+					writefln( "deleting timed-out connection" );
+				}
 				onDisconnect( c );
 				connections.remove( c.remoteAddress.toString() );
 			}
@@ -1013,33 +1057,47 @@ public class DnetCollection {
 	}
 
 	private void listenForOutOfBand() {
-		ubyte[PACKET_SIZE]	packetBuffer;
-		auto 				buff = DnetBuffer( packetBuffer );
-		DnetAddress			addr;
+		PacketBuf	packetBuffer;
+		auto 		buff = DnetBuffer( packetBuffer );
+		DnetAddress	addr;
 
 		int	size = loginSocket.receiveFrom( buff, addr );
-
 		while ( size > 0 ) {
 			// check for undersize packet
 			if ( size < 4 ) {
-				writefln( "%s: undersize packet", addr );
+				version ( Tango ) {
+					Stdout.format( "{}: undersize packet", addr ).newline;
+				}
+				else {
+					writefln( "%s: undersize packet", addr );
+				}
 				size = loginSocket.receiveFrom( buff, addr );
 				continue;
 			}
 
 			if ( *cast( int * )buff.getBuffer != -1 ) {
-				writefln( "%s: non-OOB packet received to login socket", addr );
+				version ( Tango ) {
+					Stdout.format( "{}: non-OOB packet received to login socket", addr ).newline;
+				}
+				else {
+					writefln( "%s: non-OOB packet received to login socket", addr );
+				}
 				size = loginSocket.receiveFrom( buff, addr );
 				continue;
 			}
 
 			char[]			cmd = cast( char[] )buff.getBuffer[int.sizeof..$];
-			try {
-				std.utf.validate( cmd );
+			version ( Tango ) {
+				// nothing
 			}
-			catch ( UtfException e ) {
-				writefln( "received invalid command: %s", e );
-				break;
+			else {
+				try {
+					std.utf.validate( cmd );
+				}
+				catch ( UtfException e ) {
+					writefln( "received invalid command: %s", e );
+					break;
+				}
 			}
 			scope char[][]	args = cmd.splitIntoTokens();
 
@@ -1052,12 +1110,22 @@ public class DnetCollection {
 					}
 
 					// send it back
-					sendOOB( addr, "challenge_response %s", challenges[addr.toString()] );
+					version ( Tango ) {
+						sendOOB( addr, "challenge_response {0}", challenges[addr.toString()].toUtf8 );
+					}
+					else {
+						sendOOB( addr, "challenge_response %s", challenges[addr.toString()] );
+					}
 					break;
 
 				case "connection_request":
 					if ( args.length != 4 ) {
-						writefln( "%s: reject: malformed connection request", addr );
+						version ( Tango ) {
+							Stdout.format( "{}: reject: malformed connection request", addr ).newline;
+						}
+						else {
+							writefln( "%s: reject: malformed connection request", addr );
+						}
 						sendOOB( addr, "message \"malformed connection request\"" );
 						break;
 					}
@@ -1065,18 +1133,36 @@ public class DnetCollection {
 					int		protoVer;
 					uint	challengeNumber;
 
-					try {
-						protoVer = toInt( args[1] );
-						challengeNumber = toUint( args[2] );
+					version ( Tango ) {
+						try {
+							protoVer = toInt!( char )( args[1] );
+							challengeNumber = toInt!( char )( args[2] );
+						}
+						catch ( IllegalArgumentException e ) {
+							Stdout.format( "{0}: reject: {1}", addr, e ).newline;
+							sendOOB( addr, "message \"{}\"", e );
+							break;
+						}
 					}
-					catch ( ConvError e ) {
-						writefln( "%s: reject: %s", addr, e );
-						sendOOB( addr, "message \"%s\"", e );
-						break;
+					else {
+						try {
+							protoVer = toInt( args[1] );
+							challengeNumber = toUint( args[2] );
+						}
+						catch ( ConvError e ) {
+							writefln( "%s: reject: %s", addr, e );
+							sendOOB( addr, "message \"%s\"", e );
+							break;
+						}
 					}
 
 					if ( protoVer != PROTOCOL_VERSION ) {
-						writefln( "%s: reject: wrong protocol version", addr );
+						version ( Tango ) {
+							Stdout.format( "{}: reject: wrong protocol version", addr ).newline;
+						}
+						else {
+							writefln( "%s: reject: wrong protocol version", addr );
+						}
 						sendOOB( addr, "message \"wrong protocol version\"" );
 						break;
 					}
@@ -1085,13 +1171,23 @@ public class DnetCollection {
 					if ( ( addr.toString() in challenges ) !is null ) {
 						// is the challenge valid?
 						if ( challengeNumber != challenges[addr.toString()].number ) {
-							writefln( "%s: reject: invalid challenge" );
+							version ( Tango ) {
+								Stdout.format( "{}: reject: invalid challenge", addr ).newline;
+							}
+							else {
+								writefln( "%s: reject: invalid challenge", addr );
+							}
 							sendOOB( addr, "message \"invalid challenge\"" );
 							break;
 						}
 					}
 					else {
-						writefln( "%s: reject: no challenge" );
+						version ( Tango ) {
+							Stdout.format( "{}: reject: no challenge", addr ).newline;
+						}
+						else {
+							writefln( "%s: reject: no challenge", addr );
+						}
 						sendOOB( addr, "message \"no challenge\"" );
 						break;
 					}
@@ -1100,31 +1196,57 @@ public class DnetCollection {
 
 					// acknowledge the user of a new connection
 					if ( !onConnect( addr, args[3], reason ) ) {
-						writefln( "%s: rejected by user: %s", addr, reason );
-						sendOOB( addr, "message \"%s\"", reason );
+						version ( Tango ) {
+							Stdout.format( "{0}: rejected by user: {1}", addr, reason ).newline;
+							sendOOB( addr, "message \"{}\"", reason );
+						}
+						else {
+							writefln( "%s: rejected by user: %s", addr, reason );
+							sendOOB( addr, "message \"%s\"", reason );
+						}
 						break;
 					}
 
 					// add the address to the list of connections if it isn't yet added
 					if ( ( addr.toString() in connections ) is null ) {
 						add( addr );
-						writefln( "%s: connect", addr );
+						version ( Tango ) {
+							Stdout.format( "{}: connect", addr ).newline;
+						}
+						else {
+							writefln( "%s: connect", addr );
+						}
 					}
 					else {
 						// otherwise reuse already existing connection
-						writefln( "%s: reconnect", addr );
+						version ( Tango ) {
+							Stdout.format( "{}: reconnect", addr ).newline;
+						}
+						else {
+							writefln( "%s: reconnect", addr );
+						}
 					}
 
 					connections[addr.toString()].setup( addr, null );	// FIXME: wrong public address
 
 					// send connection acknowledgement to the remote host
 					auto DnetAddress	inbandAddress = connections[addr.toString()].socket.getLocalAddress();
-					sendOOB( addr, "connection_response %s %d %s %d", inbandAddress.toAddrString, inbandAddress.port, addr.toAddrString, addr.port );
+					version ( Tango ) {
+						sendOOB( addr, "connection_response {0} {1} {2} {3}", inbandAddress.toAddrString, inbandAddress.port, addr.toAddrString, addr.port );
+					}
+					else {
+						sendOOB( addr, "connection_response %s %d %s %d", inbandAddress.toAddrString, inbandAddress.port, addr.toAddrString, addr.port );
+					}
 					break;
 
 				default:
 					if ( !onOOBpacket( args ) ) {
-						writefln( "unrecognised OOB packet %s", cmd );
+						version ( Tango ) {
+							Stdout.format( "unrecognised OOB packet {}", cmd ).newline;
+						}
+						else {
+							writefln( "unrecognised OOB packet %s", cmd );
+						}
 					}
 					break;
 			}
@@ -1134,15 +1256,20 @@ public class DnetCollection {
 	}
 
 	private void listenForInBand() {
-		ubyte[PACKET_SIZE]	packetBuffer;
-		auto				buff = DnetBuffer( packetBuffer );
-		DnetAddress			addr;
+		PacketBuf	packetBuffer;
+		auto		buff = DnetBuffer( packetBuffer );
+		DnetAddress	addr;
 
 		int size = inbandSocket.receiveFrom( buff, addr );
 		while ( size > 0 ) {
 			if ( ( addr.toString() in connections ) is null ) {
 				// ignore in-band messages from unknown hosts
-				writefln( "received unwanted packet from %s", addr );
+				version ( Tango ) {
+					Stdout.format( "received unwanted packet from {}", addr ).newline;
+				}
+				else {
+					writefln( "received unwanted packet from %s", addr );
+				}
 				size = inbandSocket.receiveFrom( buff, addr );
 				continue;
 			}

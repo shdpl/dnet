@@ -165,6 +165,14 @@ package struct DnetBuffer {
 		return data;
 	}
 
+	public void readData( ubyte[] data ) {
+		auto bytes = readBytes( data.length );
+		if ( overflowed ) {
+			return;
+		}
+		data[] = bytes[];
+	}
+
 	public ubyte[] dup(){
 		return buffer[0..bytesWritten].dup;
 	}
