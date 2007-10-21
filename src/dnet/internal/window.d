@@ -1,4 +1,4 @@
-﻿/*
+/*
 
 Copyright (c) 2007 Dmitry Shalkhakov <dmitry dot shalkhakov at gmail dot com>
 

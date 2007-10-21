@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2007 Branimir Milosavljevic <bane@3dnet.co.yu>
+Copyright (c) 2007 Branimir Milosavljevic <branimir.milosavljevic@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
@@ -39,6 +39,7 @@ import dnet.buffer;
 
 
 /**
+ Abstraction of IP v4 address.
 */
 public class DnetAddress {
 
@@ -47,24 +48,36 @@ public class DnetAddress {
 	}
 
 	/**
-		Any local address.
+	 Any local address.
 	 */
 	this(ushort port){
 		Address = new InternetAddress( port );
 	}
 
+	/**
+	 Create address from uint value and port number.
+	*/
 	this(uint ip, ushort port){
 		Address = new InternetAddress( ip, port );
 	}
 
+	/**
+	 Create address from human readable string and port number.
+	*/
 	this(char[] ip, ushort port){
 		Address = new InternetAddress( ip, port );
 	}
 
-	char[]	toAddrString() {
+	/**
+	 Returns address in human readable form (eg. address:port).
+	*/
+	char[] toAddrString() {
 		return Address.toAddrString();
 	}
 
+	/**
+	 Returns address port.
+	*/
 	ushort port() {
 		return Address.port;
 	}
@@ -92,6 +105,7 @@ public class DnetAddress {
 
 
 /**
+ Abstract of UDP connectionless socket.
 */
 public class DnetSocket {
 
@@ -101,25 +115,39 @@ public class DnetSocket {
 		long		bytesReceived;
 	}
 
+	/**
+	*/
 	this(){
 		Socket = new UdpSocket(AddressFamily.INET);
 		Socket.blocking(false);
 	}
 
+	/**
+	 Resets sent/received bytes counters.
+	*/
 	public void resetCounters() {
 		bytesSent = 0;
 		bytesReceived = 0;
 	}
 
+	/**
+	 Binds socket to an address.
+	*/
 	public void bind(DnetAddress address){
 		Socket.bind(address.Address);
 	}
 
+	/**
+	 Returns local end of socket connection.
+	*/
 	public DnetAddress getLocalAddress(){
 		InternetAddress a = cast(InternetAddress)Socket.localAddress();
 		return new DnetAddress( a.addr(), a.port() );
 	}
 
+	/**
+	 Sends data to specified address.
+	*/
 	public void sendTo(void[] buff, DnetAddress address){
 		//writefln("Socket %s sends to %s data: [%s]", 
 		//	getLocalAddress.toString(), 
@@ -130,6 +158,10 @@ public class DnetSocket {
 		bytesSent += buff.length;
 	}
 
+	/**
+	 Recieves data.
+	 Incoming data is stored in buffer and address that is received from is written.
+	*/
 	public int receiveFrom( ref DnetBuffer buff, out DnetAddress address ) {
 		buff.clear();
 
