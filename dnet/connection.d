@@ -28,8 +28,29 @@ class DnetConnection {
 	}
 
 	package {
-		alias DnetFifo!( ubyte[], 64 )	Fifo;
+		// Generic payload
+		struct Payload {
+			enum Type : ubyte {
+				BAD,		// this one's bad
+				DATA,		// this one's data
+				CMD			// and this one is a command
+			}
+
+			Type		payloadType;
+			ubyte[]		data;
+
+			void archive( T )( ref T arch ) {
+				arch( cast( ubyte )payloadType );
+				arch( data );
+			}
+		}
+
+		alias DnetFifo!( Payload, 64 )	PayloadFifo;
+		alias DnetFifo!( ubyte[], 64 )	DataFifo;
+		alias DnetFifo!( char[], 64 )	CmdFifo;
 		const RELIABLE_BACKUP			= 64;
+		const MESSAGE_BACKUP			= 32;
+		const MESSAGE_BACKUP_MASK		= MESSAGE_BACKUP - 1;
 
 		// protocol bytes
 		enum CmdBytes {
@@ -42,23 +63,31 @@ class DnetConnection {
 		// message flags
 		enum MsgFlags {
 			NONE,
-			DISCONNECTING			// remote side is disconnecting
+			DISCONNECTING					// remote side is disconnecting
+		}
+
+		// message info
+		struct MsgInfo {
+			int		size;					// message length
+			int		sentTime;				// time we sent a message
+			int		ackTime;				// time we got a response
 		}
 
 		State		state;
-		DnetHost	host;			// our host
-		DnetChannel	channel;		// channel used for communications
+		DnetHost	host;					// our host
+		DnetChannel	channel;				// channel used for communications
 
 		// connection information
-		Address		remoteAddress;		// site we're connecting to
-		uint		challengeNumber;	// challenge number
+		Address		remoteAddress;			// site we're connecting to
+		uint		challengeNumber;		// challenge number
 		int			connectionRetransmit;
-		char[]		userData;			// reference to user data
+		char[]		userData;				// reference to user data
 
 		// data queues
-		Fifo		sendQueue;
-		Fifo		receiveQueue;
-		ubyte[][]	reliableQueue;
+		PayloadFifo	sendQueue;				// outgoing payload
+		DataFifo	receiveQueue;			// received data
+		CmdFifo		cmdQueue;				// received commands
+		Payload[]	reliableQueue;
 		int			reliableSequence;
 
 		uint		outgoingAcknowledge;	// last outgoingSequence the remote side has received. This comes in
@@ -70,6 +99,8 @@ class DnetConnection {
 											// connection
 
 		ubyte		messageFlags;
+		MsgInfo[MESSAGE_BACKUP]	messages;
+		int			latencyValue;
 
 		int			disconnectTime;		// time we started disconnection process
 		int			lastReceive;		// time the last packet has been received
@@ -85,42 +116,25 @@ class DnetConnection {
 		// init data queues
 		sendQueue.init();
 		receiveQueue.init();
+		cmdQueue.init();
 		reliableQueue.length = RELIABLE_BACKUP;
 	}
 
 	/**
-		Buffers the data for sending. Set reliable to true if you want the data
+		Buffers data for sending. Set reliable to true if you want the data
 		retransmitted in case of loss. data may not be bigger than MESSAGE_LENGTH.
 
 		Note: data is copied, not referenced to.
 	*/
 	void send( ubyte[] data, bool reliable = false ) {
-		assert( data !is null );
-		assert( data.length < MESSAGE_LENGTH );
+		sendPayload( data, reliable, Payload.Type.DATA );
+	}
 
-		auto tmp = host.allocator.alloc( data.length );
-		tmp[] = data[];
-
-		if ( reliable ) {
-			// if we would be losing a reliable data that hasn't been acknowledged,
-			// we must drop the connection
-			if ( reliableSequence - reliableAcknowledge > reliableQueue.length ) {
-				debugPrint( "irrecoverable loss of reliable data, disconnecting" );
-				disconnect();
-				return;
-			}
-
-			reliableSequence++;
-			auto index = reliableSequence & ( reliableQueue.length - 1 );
-
-			if ( reliableQueue[index] !is null ) {
-				host.allocator.free( reliableQueue[index] );
-			}
-			reliableQueue[index] = tmp;
-		}
-		else {
-			sendQueue.put( tmp );
-		}
+	/**
+		Buffers a command for sending.
+	*/
+	void sendCommand( char[] cmd, bool reliable = true ) {
+		sendPayload( cmd, reliable, Payload.Type.CMD );
 	}
 
 	/**
@@ -128,13 +142,31 @@ class DnetConnection {
 		Returns: number of bytes written into data, 0 if _receive queue is empty.
 	*/
 	int receive( ubyte[] data ) {
-		ubyte[] s = receiveQueue.get;
-		if ( s is null ) {
+		ubyte[]	s;
+
+		if ( !receiveQueue.get( s ) ) {
 			return 0;
 		}
 
 		int len = s.length;
 		data[0..len] = s[];
+		host.allocator.free( s );
+		return len;
+	}
+
+	/**
+		Reads next received command.
+		Returns: number of bytes written into cmd, 0 if commands queue is empty.
+	*/
+	private int receiveCommand( char[] cmd ) {
+		char[]	s;
+
+		if ( !cmdQueue.get( s ) ) {
+			return 0;
+		}
+
+		int len = s.length;
+		cmd[0..len] = s[];
 		host.allocator.free( s );
 		return len;
 	}
@@ -157,6 +189,81 @@ class DnetConnection {
 	*/
 	bool connected() {
 		return ( state >= State.CONNECTED ) ? true : false;
+	}
+
+	/**
+		Returns network latency value, in ms.
+	*/
+	int latency() {
+		return latencyValue;
+	}
+
+	/**
+		Buffers payload for sending. payloadType distinguishes between _data and a command.
+	*/
+	private void sendPayload( void[] data, bool reliable, Payload.Type payloadType ) {
+		assert( data !is null );
+		assert( data.length < MESSAGE_LENGTH );
+
+		auto tmp = host.allocator.duplicate( cast( ubyte[] )data );
+
+		if ( reliable ) {
+			// if we would be losing a reliable data that hasn't been acknowledged,
+			// we must drop the connection
+			if ( reliableSequence - reliableAcknowledge > reliableQueue.length ) {
+				debugPrint( "irrecoverable loss of reliable data, disconnecting" );
+				disconnect();
+				return;
+			}
+
+			reliableSequence++;
+			auto index = reliableSequence & ( reliableQueue.length - 1 );
+
+			if ( reliableQueue[index].data !is null ) {
+				host.allocator.free( reliableQueue[index].data );
+			}
+			reliableQueue[index].payloadType = payloadType;
+			reliableQueue[index].data = tmp;
+		}
+		else {
+			Payload	payload;
+
+			payload.payloadType = payloadType;
+			payload.data = tmp;
+
+			sendQueue.put( payload );
+		}
+	}
+
+	/**
+		Puts payload data into appropriate queue.
+	*/
+	private void receivePayload( void[] tmp, Payload.Type type ) {
+		if ( type == Payload.Type.CMD ) {
+			cmdQueue.put( cast( char[] )tmp );
+		}
+		else if ( type == Payload.Type.DATA ) {
+			receiveQueue.put( cast( ubyte[] )tmp );
+		}
+		else {
+			error( "bad payload type" );
+		}
+	}
+
+	/**
+		Throws an exception.
+	*/
+	private void error( char[] text ) {
+		throw new Exception( text );
+	}
+
+	/**
+		Throws an exception if expr is false.
+	*/
+	private void verify( bool expr, char[] text ) {
+		if ( !expr ) {
+			error( text );
+		}
 	}
 
 	/**
@@ -200,7 +307,7 @@ class DnetConnection {
 	}
 
 	/**
-		Checks if disconnection has completed or has timed out.
+		Checks if disconnection has completed or connection got timed out.
 	*/
 	package void checkTimeOut( int dropPoint, int disconnectPoint ) {
 		if ( state < State.CONNECTED ) {
@@ -256,12 +363,39 @@ class DnetConnection {
 			channel.transmitNextFragment();
 		}
 		else {
-			// aggregate send queue data into message and transmit it
 			sendMessage();
 		}
 
 		// mark time we sent a packet
 		lastTransmit = currentTime();
+
+		calculateLatency();
+	}
+
+	/**
+		Executes commands that have been received this frame.
+	*/
+	package void executeCommands() {
+		char[][MAX_COMMAND_ARGS]args;
+		int						argCount;
+		char[MESSAGE_LENGTH]	cmd;
+
+		while ( true ) {
+			auto l = receiveCommand( cmd );
+			if ( !l ) {
+				break;
+			}
+			argCount = splitIntoTokens( cmd[0..l], args );
+
+			switch ( args[0] ) {
+				case "disconnect":
+					disconnect_f();
+					break;
+				default:
+					host.onCommand( this, cmd[0..l], args[0..argCount] );
+					break;
+			}
+		}
 	}
 
 	/**
@@ -277,28 +411,14 @@ class DnetConnection {
 		write( channel.incomingSequence );
 		write( lastReliableSequence );
 
-		// write reliable data
-		write( cast( ubyte )CmdBytes.RELIABLE );
-		write( cast( ubyte )( reliableSequence - reliableAcknowledge ) );
+		// write reliable payload
+		writeReliablePayload( write );
 
-		for ( uint i = reliableAcknowledge + 1; i <= reliableSequence; i++ ) {
-			write( i );
-			write( reliableQueue[i & ( reliableQueue.length - 1 )] );
-		}
-
-		// write unreliable data
-		while ( true ) {
-			auto data = sendQueue.get;
-			if ( data is null ) {
-				break;
-			}
-			write( cast( ubyte )CmdBytes.UNRELIABLE );
-			write( data );
-			host.allocator.free( data );
-		}
+		// write unreliable payload
+		writeUnreliablePayload( write );
 
 		// write end-of-message mark
-		write( cast( ubyte )CmdBytes.EOM );
+		writeEOM( write );
 
 		// check for overflow
 		if ( write.overflowed ) {
@@ -307,85 +427,166 @@ class DnetConnection {
 
 		// dispatch message
 		channel.transmit( write.slice );
+
+		// save off message info in message history
+		with ( messages[channel.outgoingSequence & MESSAGE_BACKUP_MASK] ) {
+			sentTime = currentTime();
+			ackTime = 0;
+			size = write.slice.length;
+		}
+	}
+
+	/**
+		Writes reliable payload to a message.
+	*/
+	private void writeReliablePayload( ref DnetWriter write ) {
+		write( cast( ubyte )CmdBytes.RELIABLE );
+		write( cast( ubyte )( reliableSequence - reliableAcknowledge ) );
+
+		for ( uint i = reliableAcknowledge + 1; i <= reliableSequence; i++ ) {
+			write( i );
+			reliableQueue[i & ( reliableQueue.length - 1 )].archive( write );
+		}
+	}
+
+	/**
+		Writes unreliable payload to a message.
+	*/
+	private void writeUnreliablePayload( ref DnetWriter write ) {
+		Payload	payload;
+
+		write( cast( ubyte )CmdBytes.UNRELIABLE );
+		write( cast( ubyte )sendQueue.length );
+
+		while ( true ) {
+			if ( !sendQueue.get( payload ) ) {
+				break;
+			}
+			payload.archive( write );
+			host.allocator.free( payload.data );
+		}
+	}
+
+	/**
+		Writes end-of-message mark to a message.
+	*/
+	private void writeEOM( ref DnetWriter write ) {
+		write( cast( ubyte )CmdBytes.EOM );
 	}
 
 	/**
 		Parses a message.
 	*/
 	private void parseMessage( ubyte[] msg ) {
-		DnetReader	read;
-		ubyte		msgFlags;
+		try {
+			DnetReader	read;
+			ubyte		msgFlags;
 
-		read.setContents( msg );
+			read.setContents( msg );
 
-		read( msgFlags );
-		read( outgoingAcknowledge );
-		read( reliableAcknowledge );
+			read( msgFlags );
+			read( outgoingAcknowledge );
+			read( reliableAcknowledge );
 
-		if ( msgFlags ) {
-			state = State.DISCONNECTING;
-			disconnectTime = currentTime();
+			if ( msgFlags ) {
+				state = State.DISCONNECTING;
+				disconnectTime = currentTime();
+			}
+
+			readReliablePayload( read );
+			readUnreliablePayload( read );
+			readEOM( read );
+
+			// save off the time we got response
+			messages[outgoingAcknowledge & MESSAGE_BACKUP_MASK].ackTime = currentTime();
 		}
+		catch ( Exception e ) {
+			debugPrint( typeToUtf8( e ) );
+			disconnect();
+		}
+	}
 
+	/**
+		Reads reliable payload from message.
+	*/
+	private void readReliablePayload( ref DnetReader read ) {
+		ubyte	cmd, count;
+		uint	sequence;
+		ubyte[]	s;
+		Payload	payload;
+
+		read( cmd );
+		verify( cmd == CmdBytes.RELIABLE, "expected reliable" );
+
+		read( count );
+
+		for ( ubyte i = 0; i < count; i++ ) {
+			read( sequence );
+			payload.archive( read );
+
+			if ( sequence < lastReliableSequence ) {
+				continue;		// we have already received it
+			}
+
+			if ( sequence > lastReliableSequence + 1 ) {
+				// we have lost some of the data, so drop the connection
+				error( "lost some reliable data" );
+			}
+
+			lastReliableSequence = sequence;
+
+			auto tmp = host.allocator.duplicate( payload.data );
+			receivePayload( tmp, payload.payloadType );
+		}
+	}
+
+	/**
+		Reads unreliable payload from message.
+	*/
+	private void readUnreliablePayload( ref DnetReader read ) {
+		ubyte	count, cmd;
+		Payload	payload;
+
+		read( cmd );
+		verify( cmd == CmdBytes.UNRELIABLE, "expected unreliable" );
+
+		read( count );
+
+		for ( ubyte i = 0; i < count; i++ ) {
+			payload.archive( read );
+			auto tmp = host.allocator.duplicate( payload.data );
+			receivePayload( tmp, payload.payloadType );
+		}
+	}
+
+	/**
+		Reads end-of-message mark.
+	*/
+	private void readEOM( ref DnetReader read ) {
 		ubyte	cmd;
 
-		while ( true ) {
-			read( cmd );
-			if ( read.overflowed ) {
-				debugPrint( "overflowed" );
-				disconnect();
-				break;
+		read( cmd );
+		verify( cmd == CmdBytes.EOM, "malformed message" );
+	}
+
+	/**
+		Calculates latency amount.
+	*/
+	private void calculateLatency() {
+		int		count, total;
+
+		foreach ( ref m; messages ) {
+			if ( m.ackTime > 0 ) {
+				total += ( m.ackTime - m.sentTime );
+				count++;
 			}
+		}
 
-			if ( cmd == CmdBytes.RELIABLE ) {
-				ubyte	count;
-				uint	sequence;
-				ubyte[]	s;
-
-				read( count );
-
-				for ( uint i = 0; i < count; i++ ) {
-					read( sequence );
-					read( s );
-
-					if ( sequence < lastReliableSequence ) {
-						continue;		// we have already received it
-					}
-
-					if ( sequence > lastReliableSequence + 1 ) {
-						// we have lost some of the data, so drop the connection
-						debugPrint( "lost some reliable data" );
-						disconnect();
-						break;
-					}
-
-					lastReliableSequence = sequence;
-					auto tmp = host.allocator.alloc( s.length );
-					tmp[] = s[];
-					receiveQueue.put( tmp );
-				}
-			}
-			else if ( cmd == CmdBytes.UNRELIABLE ) {
-				ubyte[] s;
-				read( s );
-				if ( !s.length ) {
-					debugPrint( "bad unreliable" );
-					disconnect();
-					break;
-				}
-				auto tmp = host.allocator.alloc( s.length );
-				tmp[] = s[];
-				receiveQueue.put( tmp );
-			}
-			else if ( cmd == CmdBytes.EOM ) {
-				break;
-			}
-			else {
-				// malformed message
-				debugPrint( "malformed message" );
-				disconnect();
-				break;
-			}
+		if ( !count ) {
+			latencyValue = 0;
+		}
+		else {
+			latencyValue = total / count;
 		}
 	}
 
@@ -470,5 +671,12 @@ class DnetConnection {
 		}
 
 		setup( from );
+	}
+
+	/**
+		Processes a disconnect command.
+	*/
+	private void disconnect_f() {
+
 	}
 }

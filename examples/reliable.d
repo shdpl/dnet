@@ -35,7 +35,7 @@ class ClientHost : DnetHost {
 
 	override void emit() {
 		if ( conn !is null ) {
-			conn.send( cast( ubyte[] )"foo", true );
+			conn.send( cast( ubyte[] )"foobar", true );
 
 			ubyte[MESSAGE_LENGTH]	msg;
 
@@ -90,8 +90,8 @@ class ServerHost : DnetHost {
 				if ( !l ) {
 					break;
 				}
-				if ( cast( char[] )msg[0..l] == "foo" ) {
-					debugPrint( "server: got foo" );
+				if ( cast( char[] )msg[0..l] == "foobar" ) {
+					debugPrint( "server: got foobar" );
 				}
 			}
 		}

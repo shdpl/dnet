@@ -19,12 +19,12 @@ import dnet.memory;
 	on parameters passed to constructor.
 
 	Host is scalable enough to service up to 500 connections. It uses asynchronous
-	IO running in a single thread. The rationale behind this solution is that much more
+	IO running in main thread. The rationale behind this solution is that much more
 	scalable game server (>500 connections) will most likely be developed to run in a
 	cluster. Authors deem they cannot implement a server-cluster architecture with
 	synchronous IO and multithreading. This is due to lack of the appropriate hardware.
 	BUT... maybe someday there will be DnetMassiveHost.
-
+ 
 	Note: the number of concurrent connections is not bounded in any way.
 */
 class DnetHost {
@@ -107,10 +107,10 @@ class DnetHost {
 		Sends and receives data.
 	*/
 	void emit() {
-		ubyte[PACKET_LENGTH]			buf;
-		char[][MAX_OOB_COMMAND_ARGS]	args;
-		int								dropPoint = currentTime - 8000;
-		int								disconnectPoint = currentTime - 3000;
+		ubyte[PACKET_LENGTH]	buf;
+		char[][MAX_COMMAND_ARGS]args;
+		int						dropPoint = currentTime - 8000;
+		int						disconnectPoint = currentTime - 3000;
 
 		// send packets
 		foreach ( c; connections ) {
@@ -146,7 +146,6 @@ class DnetHost {
 				}
 			}
 
-
 			// process out-of-band messages
 			if ( *cast( int * )buf.ptr == -1 ) {
 				int count = splitIntoTokens( cast( char[] )( buf[4..len] ), args );
@@ -156,6 +155,11 @@ class DnetHost {
 
 			// process in-band messages
 			processInBand( buf[0..len] );
+		}
+
+		// execute commands
+		foreach ( c; connections ) {
+			c.executeCommands();
 		}
 	}
 
@@ -258,6 +262,13 @@ class DnetHost {
 	*/
 	void onMessage( char[] text ) {
 		debugPrint( text );
+	}
+
+	/**
+		Called on every unrecognised command. args hold tokenized cmd.
+	*/
+	void onCommand( DnetConnection c, char[] cmd, char[][] args ) {
+		
 	}
 
 	/**

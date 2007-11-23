@@ -12,11 +12,11 @@ version ( Windows ) {
 /**
 	Returns time elapsed since the start of app.
 */
-package int currentTime() {
+int currentTime() {
 	version ( Windows ) {
 		return GetTickCount;
 	}
 	else {
-		static assert( 0 );
+		static assert( 0, "currentTime() is not implemented under linux" );
 	}
 }

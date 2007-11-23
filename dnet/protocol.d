@@ -9,5 +9,5 @@ module dnet.protocol;
 
 const PROTOCOL_VERSION		= 1;		/// DNet protocol version
 
-const MAX_OOB_COMMAND_ARGS	= 64;		/// Maximum number of arguments of an out-of-band message
+const MAX_COMMAND_ARGS		= 64;		/// Maximum number of arguments of a command
 const MESSAGE_LENGTH		= 16384;	/// Maximum length of a message

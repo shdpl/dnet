@@ -12,7 +12,17 @@ struct DnetAllocator {
 		return new ubyte[size];
 	}
 
+	ubyte[] duplicate( ubyte[] src ) {
+		auto dst = alloc( src.length );
+		dst[] = src[];
+		return dst;
+	}
+
 	void free( ref ubyte[] data ) {
+		delete data;
+	}
+	
+	void free( ref char[] data ) {
 		delete data;
 	}
 }
