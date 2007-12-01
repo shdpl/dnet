@@ -56,10 +56,10 @@ struct DnetFifo( T, int size ) {
 	}
 
 	/**
-		Gets data. If no more left, returns null.
+		Gets data. If no more left, returns false.
 	*/
 	bool get( ref T s ) {
-		if ( length > 0 ) {
+		if ( length ) {
 			length--;
 			s = buffer[first];
 			if ( first == capacity - 1 ) {

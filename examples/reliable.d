@@ -1,102 +1,100 @@
 ﻿/**
 	Written by Dmitry Shalkhakov but placed into public domain.
 
-	Shows DNet's reliable data delivery by simulating 80% packet loss.
+	Shows DNet's reliable data delivery by simulating 25% packet loss.
 */
 
 import dnet.utils;		// these are here only to keep the example library-independent
 import dnet.socket;		// you shouldn't rely on their existence
 import dnet.dnet;
 
-const LOSS_RATIO	= 0.80f;
+const LOSS_RATIO	= 0.25f;
 
-class ClientHost : DnetHost {
-	DnetConnection	conn;
+class ClientHost {
+	DnetHost		host;
 
 	this( char[] localAddress = null, ushort localPort = 0 ) {
-		super( localAddress, localPort, false );
+		host = new DnetHost( 33600, 33600, localAddress, localPort, false );
+		host.connectionRequest = &handleConnectionRequest;
+		host.connection = &handleConnection;
+		host.messageSend = &handleMessageSend;
+		host.messageReceive = &handleMessageReceive;
 	}
 
-	override bool onConnectionRequest( Address from, char[] userData, ref char[] reason ) {
+	bool handleConnectionRequest( Address from, char[] userData, ref char[] reason ) {
 		debugPrint( "client: connection" );
 		return false;
 	}
 
-	override void onConnectionResponse( DnetConnection c ) {
+	void handleConnection( DnetConnection c ) {
 		debugPrint( "client: connected to server" );
-		conn = c;
-		simulatedLoss = LOSS_RATIO;	// this is set here so you won't have to wait for the connection attempt to succeed
+		host.lossRatio = LOSS_RATIO;	// this is set here so you won't have to wait for the connection attempt to succeed
 	}
 
-	override void onDisconnect( DnetConnection c ) {
-		debugPrint( "client: disconnect" );
-		conn = null;
+	void handleMessageSend( DnetConnection c ) {
+		c.send( cast( ubyte[] )"foobar", true );
 	}
 
-	override void emit() {
-		if ( conn !is null ) {
-			conn.send( cast( ubyte[] )"foobar", true );
+	void handleMessageReceive( DnetConnection c ) {
+		ubyte[MESSAGE_LENGTH]	msg;
 
-			ubyte[MESSAGE_LENGTH]	msg;
-
-			while ( true ) {
-				int l = conn.receive( msg );
-				if ( !l ) {
-					break;
-				}
-				if ( cast( char[] )msg[0..l] == "bar" ) {
-					debugPrint( "client: got bar" );
-				}
+		while ( true ) {
+			int l = c.receive( msg );
+			if ( !l ) {
+				break;
+			}
+			if ( cast( char[] )msg[0..l] == "bar" ) {
+				debugPrint( "client: got bar" );
 			}
 		}
+	}
 
-		super.emit();
+	void emit() {
+		host.emit();
 	}
 }
 
-class ServerHost : DnetHost {
-	bool	sendFoo;
+class ServerHost {
+	DnetHost	host;
 
 	this( char[] localAddress = null, ushort localPort = 0 ) {
-		super( localAddress, localPort );
+		host = new DnetHost( 33600, 33600, localAddress, localPort );
+		host.connectionRequest = &handleConnectionRequest;
+		host.connection = &handleConnection;
+		host.messageSend = &handleMessageSend;
+		host.messageReceive = &handleMessageReceive;
 	}
 
-	override bool onConnectionRequest( Address from, char[] userData, ref char[] reason ) {
+	void emit() {
+		host.emit();
+	}
+
+	bool handleConnectionRequest( Address from, char[] userData, ref char[] reason ) {
 		debugPrint( "server: connection from " ~ typeToUtf8( from ) );
 		return true;
 	}
 
-	override void onConnectionResponse( DnetConnection c ) {
+	void handleConnection( DnetConnection c ) {
 		debugPrint( "server: client connected" );
-		simulatedLoss = LOSS_RATIO;	// this is set here so you won't have to wait for the connection attempt to succeed
+		host.lossRatio = LOSS_RATIO;	// this is set here so you won't have to wait for the connection attempt to succeed
 	}
 
-	override void onDisconnect( DnetConnection c ) {
-		debugPrint( "server: client disconnected" );
+	void handleMessageSend( DnetConnection c ) {
+		c.send( cast( ubyte[] )"bar", true );
 	}
 
-	override void emit() {
+	void handleMessageReceive( DnetConnection c ) {
 		ubyte[MESSAGE_LENGTH]	msg;
 
-		foreach ( c; getAll.values ) {
-			if ( !c.connected ) {
-				continue;
+		while ( true ) {
+			auto l = c.receive( msg );
+			if ( !l ) {
+				break;
 			}
-
-			c.send( cast( ubyte[] )"bar", true );
-
-			while ( true ) {
-				auto l = c.receive( msg );
-				if ( !l ) {
-					break;
-				}
-				if ( cast( char[] )msg[0..l] == "foobar" ) {
-					debugPrint( "server: got foobar" );
-				}
+			if ( cast( char[] )msg[0..l] == "foobar" ) {
+				debugPrint( "server: got foobar" );
 			}
 		}
-
-		super.emit();
 	}
 }
 
@@ -104,7 +102,7 @@ int main( char[][] args ) {
 	auto client = new ClientHost;
 	auto server = new ServerHost( "localhost", 1234 );
 
-	client.connect( "localhost", 1234 );
+	client.host.connect( "localhost", 1234 );
 
 	while ( true ) {
 		server.emit();

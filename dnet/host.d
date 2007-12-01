@@ -5,6 +5,8 @@
 */
 module dnet.host;
 
+import tango.io.Stdout;
+
 import dnet.channel;
 import dnet.connection;
 import dnet.utils;
@@ -49,25 +51,93 @@ class DnetHost {
 		Socket		socket;
 		Address		from;
 		bool		listen;
+	}
 
-		// development tools
-		float		lossRatio;	// percentage of simulated packet loss
+	public {
+		int			uploadBw;		/// Available upload bandwidth, in bps
+		int			downloadBw;		/// Available download bandwidth, in bps
+		float		lossRatio;		/// Percentage of simulated packet loss, for development
+
+		/**
+			Called when connection request is processed to give user a chance to refuse connection.
+			userData is the data passed to DnetHost.connect on the remote side.
+			reason may hold the rejection text which will be sent to the remote side.
+
+			See_Also: DnetHost.connect
+
+			Note: userData is located on stack.
+		*/
+		bool delegate( Address from, char[] userData, ref char[] reason ) connectionRequest;
+
+		/**
+			Called when connection to the remote side has been established.
+		*/
+		void delegate( DnetConnection c ) connection;
+
+		/**
+			Called when c is being disconnected.
+		*/
+		void delegate( DnetConnection c, char[] reason ) disconnection;
+
+		/**
+			Called when unknown out-of-band packet is received. args hold the arguments.
+			Return true if packet has been successfully processed, return false otherwise.
+			Note: args are located on stack.
+		*/
+		bool delegate( char[][] args ) oobPacket;
+
+		/**
+			Called when out-of-band 'message' packet from remote host has been received.
+		*/
+		void delegate( char[] text ) oobMessage;
+
+		/**
+			Called on every unrecognised command. args hold tokenized cmd.
+		*/
+		void delegate( DnetConnection c, char[] cmd, char[][] args ) command;
+
+		/**
+			Called when network has dealt with previous message and is ready to send a new one. Use this method as an
+			entry point for sending unreliable data.
+		*/
+		void delegate( DnetConnection c ) messageSend;
+
+		/**
+			Called upon message arrival.
+		*/
+		void delegate( DnetConnection c ) messageReceive;
+	}
+
+	invariant {
+		assert( lossRatio !is float.nan );
+		assert( lossRatio >= 0 && lossRatio <= 1 );
 	}
 
 	/**
 		Constructor.
 
 		Parameters:
-	
+
+			uploadBw = available upload bandwidth, in bits per second. May not be set to zero.
+
+			downloadBw = available download bandwidth, in bits per second. May not be set to zero.
+
 			localAddress = address to bind socket to, null means automatic address selection
-	
+
 			localPort = port to bind socket to, 0 means automatic port selection
-	
+
 			listen = set to false to disallow inbound connections
 	*/
-	this( char[] localAddress = null, ushort localPort = 0, bool listen = true ) {
+	this( int uploadBw, int downloadBw, char[] localAddress = null, ushort localPort = 0, bool listen = true )
+	in {
+		assert( uploadBw );
+		assert( downloadBw );
+	}
+	body {
 		debugPrint( "DnetHost.this()" );
 
+		this.uploadBw = uploadBw;
+		this.downloadBw = downloadBw;
 		this.listen = listen;
 		this.lossRatio = 0.0f;
 
@@ -86,8 +156,9 @@ class DnetHost {
 
 	/**
 		Initiates a connection to a remote side identified by address and port. userData
-		will be delivered to remote side and passed to dnet.host.DnetHost.onConnectionRequest().
+		will be delivered to remote side and passed to $(D_PSYMBOL connectionRequest).
 		It may not be longer than 1024 characters.
+		Returns created connection.
 
 		Note: userData is not copied, but referenced to.
 	*/
@@ -95,10 +166,11 @@ class DnetHost {
 		assert( userData.length < 1024 );
 		debugPrint( "DnetHost.connectTo()" );
 
-		auto c = new DnetConnection( this );
+		auto c = new DnetConnection( this, true );
 		c.connect( address, port, userData );
-
 		connections[typeToUtf8( c.remoteAddress ).dup] = c;
+
+		c.downloadRateMax = downloadBw / connections.values.length;
 
 		return c;
 	}
@@ -128,6 +200,9 @@ class DnetHost {
 			}
 		}
 
+		// allocate bandwidth
+		allocateBandwidth();
+
 		// receive packets
 		while ( true ) {
 			int len = socket.receiveFrom( buf, from );
@@ -156,11 +231,6 @@ class DnetHost {
 			// process in-band messages
 			processInBand( buf[0..len] );
 		}
-
-		// execute commands
-		foreach ( c; connections ) {
-			c.executeCommands();
-		}
 	}
 
 	/**
@@ -177,6 +247,17 @@ class DnetHost {
 	}
 
 	/**
+		Sends command to all established connections.
+	*/
+	void broadcastCommand( char[] cmd, bool reliable = true ) {
+		foreach ( c; connections.values ) {
+			if ( c.state >= DnetConnection.State.CONNECTED ) {
+				c.sendCommand( cmd, reliable );
+			}
+		}
+	}
+
+	/**
 		Returns the list of connections.
 	*/
 	DnetConnection[char[]] getAll() {
@@ -184,32 +265,12 @@ class DnetHost {
 	}
 
 	/**
-		Sets/gets simulated packet loss ratio, in percents.
-	*/
-	void simulatedLoss( float f ) {
-		lossRatio = f;
-		if ( lossRatio > 1.0f ) {
-			lossRatio = 1.0f;
-		}
-		else if ( lossRatio < 0.0f ) {
-			lossRatio = 0.0f;
-		}
-	}
-
-	/**
-		ditto
-	*/
-	float simulatedLoss() {
-		return lossRatio;
-	}
-
-	/**
 		Forcefully disconnect all established connections. There will be no connections after returning
 		from this method.
 	*/
-	void disconnectAll() {
+	void disconnectAll( char[] reason = "host is shutting down" ) {
 		foreach ( c; connections.values ) {
-			c.disconnect();
+			c.disconnect( reason );
 		}
 
 		emit();
@@ -222,53 +283,21 @@ class DnetHost {
 	}
 
 	/**
-		Called when connection request is processed to give user a chance to refuse connection.
-		userData is the data passed to dnet.host.DnetHost.connectTo on the remote side.
-		reason may hold the rejection text. It will be sent to the remote side.
-
-		See_Also: dnet.host.DnetHost.connect
-
-		Note: userData is located on stack.
+		Allocates bandwidth between connections.
 	*/
-	bool onConnectionRequest( Address from, char[] userData, ref char[] reason ) {
-		return true;
-	}
-
-	/**
-		Called when connection to the remote side has been established.
-	*/
-	void onConnectionResponse( DnetConnection c ) {
-
-	}
-
-	/**
-		Called when c is being disconnected.
-	*/
-	void onDisconnect( DnetConnection c ) {
-
-	}
-
-	/**
-		Called when unknown out-of-band packet is received. args hold the arguments.
-		Return true if packet has been successfully processed, return false otherwise.
-		NOTE: args are located on stack.
-	*/
-	bool onOOBpacket( char[][] args ) {
-		return false;
-	}
-
-	/**
-		Called when message from remote host has been received.
-	*/
-	void onMessage( char[] text ) {
-		debugPrint( text );
-	}
-
-	/**
-		Called on every unrecognised command. args hold tokenized cmd.
-	*/
-	void onCommand( DnetConnection c, char[] cmd, char[][] args ) {
-		
+	private void allocateBandwidth() {
+		// uniformly distribute bandwidth between connections
+		// TODO: take bandwidth capacities heterogenity into account
+		auto max = 0;
+		if ( connections.values.length ) {
+			max = uploadBw / connections.values.length;
+		}
+		else {
+			max = uploadBw;
+		}
+		foreach ( c; connections.values ) {
+			c.uploadRateMax = max;
+		}
 	}
 
 	/**
@@ -295,13 +324,13 @@ class DnetHost {
 				break;
 
 			case "message":
-				if ( args.length == 2 ) {
-					onMessage( args[1] );
+				if ( args.length == 2 && oobMessage !is null ) {
+					oobMessage( args[1] );
 				}
 				break;
 
 			default:
-				if ( !onOOBpacket( args ) ) {
+				if ( oobPacket !is null && !oobPacket( args ) ) {
 					debugPrint( "unknow OOB command " ~ args[0] );
 				}
 				break;
@@ -351,13 +380,15 @@ class DnetHost {
 			return;
 		}
 
-		if ( args.length != 4 ) {
+		if ( args.length != 5 ) {
 			DnetChannel.transmitOOB( socket, from, "message \"malformed connection request\"" );
 			return;
 		}
 
 		int protoVer = dnetAtoi( args[1] );
 		int challenge = dnetAtoi( args[2] );
+		char[] userData = args[3];
+		int downloadRate = dnetAtoi( args[4] );
 
 		if ( protoVer != PROTOCOL_VERSION ) {
 			DnetChannel.transmitOOB( socket, from, "message \"wrong DNet protocol version\"" );
@@ -372,7 +403,7 @@ class DnetHost {
 		char[]	reason;
 
 		// acknowledge the user of a new connection
-		if ( !onConnectionRequest( from, args[3], reason ) ) {
+		if ( connectionRequest && !connectionRequest( from, userData, reason ) ) {
 			debugPrint( "connection rejected by user" );
 			version ( Tango ) {
 				DnetChannel.transmitOOB( socket, from, "message \"{0}\"", reason );
@@ -385,16 +416,24 @@ class DnetHost {
 
 		// add the address to the list of connections if it isn't yet added
 		if ( ( typeToUtf8( from ) in connections ) is null ) {
-			connections[typeToUtf8( from )] = new DnetConnection( this );
+			connections[typeToUtf8( from )] = new DnetConnection( this, false );
 		}
 		else {
 			// otherwise reuse already existing connection
 		}
+		auto c = connections[typeToUtf8( from )];
 
-		connections[typeToUtf8( from )].setup( from );
+		c.userData = userData;
+		c.setup( from, downloadRate );
 
 		// send connection acknowledgement back to the remote host
-		DnetChannel.transmitOOB( socket, from, "connection_response" );
+		assert( c.downloadRateMax );
+		version ( Tango ) {
+			DnetChannel.transmitOOB( socket, from, "connection_response {0}", c.downloadRateMax );
+		}
+		else {
+			DnetChannel.transmitOOB( socket, from, "connection_response %d", c.downloadRateMax );
+		}
 	}
 
 	/**
@@ -402,7 +441,7 @@ class DnetHost {
 	*/
 	private void oobChallengeResponse( char[][] args ) {
 		if ( ( typeToUtf8( from ) in connections ) is null ) {
-			return;		// malicious attack
+			return;		// malicious attack OR bug in dnet
 		}
 		connections[typeToUtf8( from )].oobChallengeResponse( args, from );
 	}
@@ -412,7 +451,7 @@ class DnetHost {
 	*/
 	private void oobConnectionResponse( char[][] args ) {
 		if ( ( typeToUtf8( from ) in connections ) is null ) {
-			return;		// malicious attack
+			return;		// malicious attack OR bug in dnet
 		}
 		connections[typeToUtf8( from )].oobConnectionResponse( args, from );
 	}

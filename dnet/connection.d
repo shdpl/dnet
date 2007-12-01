@@ -5,6 +5,13 @@
 */
 module dnet.connection;
 
+version ( Tango ) {
+	import tango.text.convert.Sprint;
+}
+else {
+	import std.format;
+}
+
 import dnet.buffer;
 import dnet.channel;
 import dnet.socket;
@@ -18,16 +25,16 @@ import dnet.fifo;
 	Simple name for two-end points connection, where one is always local address.
 */
 class DnetConnection {
-	/// Connection state
-	enum State {
-		DISCONNECTED,		/// not at all connected
-		CHALLENGING,		/// sending challenge request
-		CONNECTING,			/// received challenge request, sending connection request
-		CONNECTED,			/// got connection response, data can now be sent reliably
-		DISCONNECTING,		/// sending messages with MsgFlags.DISCONNECTING
-	}
-
 	package {
+		// Connection state
+		enum State {
+			DISCONNECTED,		// not at all connected
+			CHALLENGING,		// sending challenge request
+			CONNECTING,			// received challenge request, sending connection request
+			CONNECTED,			// got connection response, data can now be sent reliably
+			DISCONNECTING,		// disconnecting
+		}
+
 		// Generic payload
 		struct Payload {
 			enum Type : ubyte {
@@ -60,12 +67,6 @@ class DnetConnection {
 			EOM
 		}
 
-		// message flags
-		enum MsgFlags {
-			NONE,
-			DISCONNECTING					// remote side is disconnecting
-		}
-
 		// message info
 		struct MsgInfo {
 			int		size;					// message length
@@ -76,12 +77,17 @@ class DnetConnection {
 		State		state;
 		DnetHost	host;					// our host
 		DnetChannel	channel;				// channel used for communications
+		bool		local;					// is this a local or a foreign connection?
 
 		// connection information
 		Address		remoteAddress;			// site we're connecting to
 		uint		challengeNumber;		// challenge number
-		int			connectionRetransmit;
+		int			connectionRetransmit;	// last connection packet dispatch time
 		char[]		userData;				// reference to user data
+
+		// flow control
+		int			uploadRateMax;			// maximum upload bandwidth (set by host)
+		int			downloadRateMax;		// maximum download bandwidth (set by remote side)
 
 		// data queues
 		PayloadFifo	sendQueue;				// outgoing payload
@@ -98,20 +104,22 @@ class DnetConnection {
 											// filter duplicated reliable data, which can occur in case of a lossy
 											// connection
 
-		ubyte		messageFlags;
 		MsgInfo[MESSAGE_BACKUP]	messages;
 		int			latencyValue;
 
+		// timers
 		int			disconnectTime;		// time we started disconnection process
 		int			lastReceive;		// time the last packet has been received
 		int			lastTransmit;		// time the last packet has been sent
+		int			packetTime;			// time the next packet should be sent
 	}
 
 	/**
 		Constructor.
 	*/
-	package this( DnetHost host ) {
+	package this( DnetHost host, bool local ) {
 		this.host = host;
+		this.local = local;
 
 		// init data queues
 		sendQueue.init();
@@ -122,7 +130,7 @@ class DnetConnection {
 
 	/**
 		Buffers data for sending. Set reliable to true if you want the data
-		retransmitted in case of loss. data may not be bigger than MESSAGE_LENGTH.
+		retransmitted in case of loss. data may not be greater than MESSAGE_LENGTH.
 
 		Note: data is copied, not referenced to.
 	*/
@@ -174,14 +182,30 @@ class DnetConnection {
 	/**
 		Disconnect from the server currently connected to.
 	*/
-	void disconnect() {
+	void disconnect( char[] reason ) {
 		if ( state < State.CONNECTED ) {
 			return;
 		}
 
-		messageFlags |= MsgFlags.DISCONNECTING;
+		if ( state == State.DISCONNECTING ) {
+			return;
+		}
+
 		state = State.DISCONNECTING;
 		disconnectTime = currentTime();
+
+		if ( local && host.disconnection ) {
+			host.disconnection( this, "disconnected" );
+		}
+
+		version ( Tango ) {
+			scope sprint = new Sprint!( char )( 1024 );
+			sendCommand( sprint( "disconnect \"{0}\"", reason ) );
+		}
+		else {
+			char[1024]	buf;
+			sendCommand( sformat( buf, "disconnect \"%s\"", reason ) );
+		}
 	}
 
 	/**
@@ -199,6 +223,13 @@ class DnetConnection {
 	}
 
 	/**
+		Returns true if connection was initiated locally, false is returned otherwise.
+	*/
+	bool isLocal() {
+		return local;
+	}
+
+	/**
 		Buffers payload for sending. payloadType distinguishes between _data and a command.
 	*/
 	private void sendPayload( void[] data, bool reliable, Payload.Type payloadType ) {
@@ -210,9 +241,8 @@ class DnetConnection {
 		if ( reliable ) {
 			// if we would be losing a reliable data that hasn't been acknowledged,
 			// we must drop the connection
-			if ( reliableSequence - reliableAcknowledge > reliableQueue.length ) {
-				debugPrint( "irrecoverable loss of reliable data, disconnecting" );
-				disconnect();
+			if ( reliableSequence - reliableAcknowledge == reliableQueue.length + 1 ) {
+				disconnect( "irrecoverable loss of reliable data" );
 				return;
 			}
 
@@ -269,8 +299,8 @@ class DnetConnection {
 	/**
 		Connect _to server (listening host).
 
-		See_Also: dnet.host.DnetHost.connectTo
-		Note: userData is not copied, but referenced to.
+		See_Also: DnetHost.connect
+		Note: userData is not copied, but referenced _to.
 	*/
 	package void connect( char[] to, ushort port, char[] userData ) {
 		// set remote address
@@ -284,17 +314,22 @@ class DnetConnection {
 	/**
 		Sets up the connection. After that data can be delivered reliably.
 	*/
-	package void setup( Address from ) {
+	package void setup( Address from, int downloadRate ) {
 		{
 			auto a = cast( IPv4Address )from;
 			assert( a !is null );
 			channel.setup( host.socket, new IPv4Address( a.addr, a.port ) );
 		}
 
+		assert( downloadRate );
+		downloadRateMax = downloadRate;
+		userData = null;
 		state = State.CONNECTED;
 
 		lastReceive = currentTime();
 		lastTransmit = 0;
+		packetTime = 0;
+		messages[] = messages.init;
 
 		reliableSequence = 0;
 
@@ -303,7 +338,9 @@ class DnetConnection {
 		lastReliableSequence = 0;
 
 		// notify user
-		host.onConnectionResponse( this );
+		if ( host.connection !is null ) {
+			host.connection( this );
+		}
 	}
 
 	/**
@@ -314,15 +351,21 @@ class DnetConnection {
 			return;
 		}
 
-		if ( lastReceive < disconnectPoint || lastReceive < dropPoint ) {
-			debugPrint( "disconnect" );
-			state = DnetConnection.State.DISCONNECTED;
-			host.onDisconnect( this );
+		if ( state == State.DISCONNECTING && disconnectTime < disconnectPoint ) {
+			state = State.DISCONNECTED;
+			return;
+		}
+
+		if ( lastReceive < dropPoint ) {
+			state = State.DISCONNECTED;
+			if ( host.disconnection !is null ) {
+				host.disconnection( this, "connection timed out" );
+			}
 		}
 	}
 
 	/**
-		Reads a packet.
+		Reads a packet. Called by host.
 	*/
 	package void readPacket( ubyte[] packet ) {
 		if ( state < State.CONNECTED ) {
@@ -358,24 +401,55 @@ class DnetConnection {
 			return;
 		}
 
+		if ( packetTime >= currentTime() ) {
+			return;		// it's not time yet
+		}
+
+		int sequence;
+
 		// if there are unsent fragments, send them now
 		if ( channel.outgoingFragments ) {
+			sequence = channel.outgoingSequence & MESSAGE_BACKUP_MASK;
 			channel.transmitNextFragment();
 		}
 		else {
+			// generate new message and send it
+			if ( host.messageSend !is null ) {
+				host.messageSend( this );
+			}
 			sendMessage();
+			sequence = channel.outgoingSequence & MESSAGE_BACKUP_MASK;
+			calculateLatency();
 		}
+
+		// schedule next dispatch
+		packetTime = currentTime() + rateMsec( messages[sequence].size );
 
 		// mark time we sent a packet
 		lastTransmit = currentTime();
+	}
 
-		calculateLatency();
+	/**
+		Returns time the packet of given size is supposed to take to send, based on upload bandwidth.
+	*/
+	private int rateMsec( int messageSize ) {
+		int	packetSize = ( messageSize >= PACKET_LENGTH ) ? PACKET_LENGTH : messageSize;
+		packetSize += 48;		// add some overhead
+
+		// convert bits per second into bytes per seconds
+		auto bps = uploadRateMax << 3;
+
+		// figure out time it will take to send
+		auto time = cast( float )packetSize / cast( float )bps;
+
+		// return time in milliseconds
+		return cast( int )( time * 1000 );
 	}
 
 	/**
 		Executes commands that have been received this frame.
 	*/
-	package void executeCommands() {
+	private void executeCommands() {
 		char[][MAX_COMMAND_ARGS]args;
 		int						argCount;
 		char[MESSAGE_LENGTH]	cmd;
@@ -388,11 +462,21 @@ class DnetConnection {
 			argCount = splitIntoTokens( cmd[0..l], args );
 
 			switch ( args[0] ) {
+				// remote side disconnects
 				case "disconnect":
-					disconnect_f();
+					disconnect_f( args[0..argCount] );
 					break;
+/*				// bandwidth adjustment
+				case "bw":
+					verify( argCount == 3, "bw: bad args" );
+					downloadMax = dnetAtoi( args[1] );
+					uploadMax = dnetAtoi( args[2] );
+					host.allocateBandwidth();
+					break;*/
 				default:
-					host.onCommand( this, cmd[0..l], args[0..argCount] );
+					if ( host.command !is null ) {
+						host.command( this, cmd[0..l], args[0..argCount] );
+					}
 					break;
 			}
 		}
@@ -407,7 +491,6 @@ class DnetConnection {
 
 		write.setContents( msg );
 
-		write( messageFlags );
 		write( channel.incomingSequence );
 		write( lastReliableSequence );
 
@@ -458,10 +541,7 @@ class DnetConnection {
 		write( cast( ubyte )CmdBytes.UNRELIABLE );
 		write( cast( ubyte )sendQueue.length );
 
-		while ( true ) {
-			if ( !sendQueue.get( payload ) ) {
-				break;
-			}
+		while ( sendQueue.get( payload ) ) {
 			payload.archive( write );
 			host.allocator.free( payload.data );
 		}
@@ -480,18 +560,11 @@ class DnetConnection {
 	private void parseMessage( ubyte[] msg ) {
 		try {
 			DnetReader	read;
-			ubyte		msgFlags;
 
 			read.setContents( msg );
 
-			read( msgFlags );
 			read( outgoingAcknowledge );
 			read( reliableAcknowledge );
-
-			if ( msgFlags ) {
-				state = State.DISCONNECTING;
-				disconnectTime = currentTime();
-			}
 
 			readReliablePayload( read );
 			readUnreliablePayload( read );
@@ -499,10 +572,17 @@ class DnetConnection {
 
 			// save off the time we got response
 			messages[outgoingAcknowledge & MESSAGE_BACKUP_MASK].ackTime = currentTime();
+
+			// fire 'receive' event
+			if ( host.messageReceive !is null ) {
+				host.messageReceive( this );
+			}
+
+			// execute commands
+			executeCommands();
 		}
 		catch ( Exception e ) {
-			debugPrint( typeToUtf8( e ) );
-			disconnect();
+			disconnect( typeToUtf8( e ) );
 		}
 	}
 
@@ -593,7 +673,7 @@ class DnetConnection {
 	/**
 		Sends a connection request if time.
 	*/
-	package void transmitConnectionRequest() {
+	private void transmitConnectionRequest() {
 		// send connection requests once in five seconds
 		if ( currentTime() - connectionRetransmit < 5000 ) {
 			return;		// time hasn't come yet
@@ -605,10 +685,10 @@ class DnetConnection {
 			break;
 		case State.CONNECTING:
 			version ( Tango ) {
-				DnetChannel.transmitOOB( host.socket, remoteAddress, "connection_request {0} {1} \"{2}\"", PROTOCOL_VERSION, challengeNumber, userData );
+				DnetChannel.transmitOOB( host.socket, remoteAddress, "connection_request {0} {1} \"{2}\" {3}", PROTOCOL_VERSION, challengeNumber, userData, downloadRateMax );
 			}
 			else {
-				DnetChannel.transmitOOB( host.socket, remoteAddress, "connection_request %d %d \"%s\"", PROTOCOL_VERSION, challengeNumber, userData );
+				DnetChannel.transmitOOB( host.socket, remoteAddress, "connection_request %d %d \"%s\" %d", PROTOCOL_VERSION, challengeNumber, userData, downloadRateMax );
 			}
 			break;
 		}
@@ -617,7 +697,7 @@ class DnetConnection {
 	}
 
 	/**
-		Processes OOB challenge response. Propagated _from host.
+		Processes OOB challenge response. Called by host.
 	*/
 	package void oobChallengeResponse( char[][] args, Address from ) {
 		if ( state != State.CHALLENGING ) {
@@ -653,7 +733,7 @@ class DnetConnection {
 	}
 
 	/**
-		Processes OOB connection response. Propagated _from host.
+		Processes OOB connection response. Called by host.
 	*/
 	package void oobConnectionResponse( char[][] args, Address from ) {
 		if ( state != State.CONNECTING ) {
@@ -665,18 +745,22 @@ class DnetConnection {
 			}
 			return;
 		}
-		if ( args.length != 1 ) {
+		if ( args.length != 2 ) {
 			debugPrint( "malformed connection response" );
 			return;
 		}
 
-		setup( from );
+		setup( from, dnetAtoi( args[1] ) );
 	}
 
 	/**
 		Processes a disconnect command.
 	*/
-	private void disconnect_f() {
-
+	private void disconnect_f( char[][] args ) {
+		state = State.DISCONNECTING;
+		disconnectTime = currentTime();
+		if ( host.disconnection !is null ) {
+			host.disconnection( this, args[1] );
+		}
 	}
 }

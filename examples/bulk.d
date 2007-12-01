@@ -10,101 +10,97 @@ import dnet.utils;		// these are here only to keep the example library-independe
 import dnet.socket;		// you shouldn't rely on their existence
 import dnet.dnet;
 
-class ClientHost : DnetHost {
+class ClientHost {
+	DnetHost		host;
 	DnetConnection	conn;
 
 	this( char[] localAddress = null, ushort localPort = 0 ) {
-		super( localAddress, localPort, false );
+		host = new DnetHost( 33600, 33600, localAddress, localPort, false );
+		host.connection = &handleConnection;
+		host.messageSend = &handleMessageSend;
+		host.messageReceive = &handleMessageReceive;
 	}
 
-	override bool onConnectionRequest( Address from, char[] userData, ref char[] reason ) {
-		debugPrint( "client: connection" );
-		return false;
-	}
-
-	override void onConnectionResponse( DnetConnection c ) {
+	void handleConnection( DnetConnection c ) {
 		debugPrint( "client: connected to server" );
 		conn = c;
 	}
 
-	override void onDisconnect( DnetConnection c ) {
-		debugPrint( "client: disconnect" );
-		conn = null;
+	void handleMessageSend( DnetConnection c ) {
+		c.send( cast( ubyte[] )"foo" );
+
+		ubyte[15000] extraFoo;
+		c.send( extraFoo );
 	}
 
-	override void emit() {
-		if ( conn !is null ) {
-			conn.send( cast( ubyte[] )"foo" );
+	void handleMessageReceive( DnetConnection c ) {
+		ubyte[MESSAGE_LENGTH]	msg;
 
-			ubyte[15000] extraFoo;
-			conn.send( extraFoo );
-
-			ubyte[MESSAGE_LENGTH]	msg;
-
-			while ( true ) {
-				int l = conn.receive( msg );
-				if ( !l ) {
-					break;
-				}
-				if ( cast( char[] )msg[0..l] == "bar" ) {
-					debugPrint( "client: got bar" );
-				}
-				else if ( l == 15000 ) {
-					debugPrint( "client: got extra bar" );
-				}
+		while ( true ) {
+			int l = c.receive( msg );
+			if ( !l ) {
+				break;
+			}
+			if ( cast( char[] )msg[0..l] == "bar" ) {
+				debugPrint( "client: got bar" );
+			}
+			else if ( l == 15000 ) {
+				debugPrint( "client: got extra bar" );
 			}
 		}
+	}
 
-		super.emit();
+	void emit() {
+		host.emit();
 	}
 }
 
-class ServerHost : DnetHost {
-	bool	sendFoo;
+class ServerHost {
+	DnetHost	host;
 
 	this( char[] localAddress = null, ushort localPort = 0 ) {
-		super( localAddress, localPort );
+		host = new DnetHost( 33600, 33600, localAddress, localPort );
+		host.connectionRequest = &handleConnectionRequest;
+		host.connection = &handleConnection;
+		host.messageSend = &handleMessageSend;
+		host.messageReceive = &handleMessageReceive;
 	}
 
-	override bool onConnectionRequest( Address from, char[] userData, ref char[] reason ) {
+	bool handleConnectionRequest( Address from, char[] userData, ref char[] reason ) {
 		debugPrint( "server: connection from " ~ typeToUtf8( from ) );
 		return true;
 	}
 
-	override void onConnectionResponse( DnetConnection c ) {
+	void handleConnection( DnetConnection c ) {
 		debugPrint( "server: client connected" );
 	}
 
-	override void onDisconnect( DnetConnection c ) {
-		debugPrint( "server: client disconnected" );
-	}
-
-	override void emit() {
-		ubyte[MESSAGE_LENGTH]	msg;
+	void handleMessageSend( DnetConnection c ) {
 		ubyte[15000]			extraBar;
 
-		foreach ( c; getAll.values ) {
-			if ( !c.connected ) {
-				continue;
-			}
+		c.send( cast( ubyte[] )"bar" );
+		c.send( extraBar );
+	}
 
-			c.send( cast( ubyte[] )"bar" );
-			c.send( extraBar );
-			while ( true ) {
-				auto l = c.receive( msg );
-				if ( !l ) {
-					break;
-				}
-				if ( cast( char[] )msg[0..l] == "foo" ) {
-					debugPrint( "server: got foo" );
-				}
-				else if ( l == 15000 ) {
-					debugPrint( "server: got extra foo" );
-				}
+	void handleMessageReceive( DnetConnection c ) {
+		ubyte[MESSAGE_LENGTH]	msg;
+
+		while ( true ) {
+			auto l = c.receive( msg );
+			if ( !l ) {
+				break;
+			}
+			if ( cast( char[] )msg[0..l] == "foo" ) {
+				debugPrint( "server: got foo" );
+			}
+			else if ( l == 15000 ) {
+				debugPrint( "server: got extra foo" );
 			}
 		}
+	}
 
-		super.emit();
+	void emit() {
+		host.emit();
 	}
 }
 
@@ -112,7 +108,7 @@ int main( char[][] args ) {
 	auto client = new ClientHost;
 	auto server = new ServerHost( "localhost", 1234 );
 
-	client.connect( "localhost", 1234 );
+	client.host.connect( "localhost", 1234 );
 
 	while ( true ) {
 		server.emit();
