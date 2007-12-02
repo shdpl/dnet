@@ -50,6 +50,8 @@ class DnetHost {
 		// communications
 		Socket		socket;
 		Address		from;
+		char[]		localAdr;
+		ushort		localPort;
 		bool		listen;
 	}
 
@@ -128,7 +130,7 @@ class DnetHost {
 
 			listen = set to false to disallow inbound connections
 	*/
-	this( int uploadBw, int downloadBw, char[] localAddress = null, ushort localPort = 0, bool listen = true )
+	this( int uploadBw, int downloadBw, char[] localAddress = "localhost", ushort localPort = 0, bool listen = true )
 	in {
 		assert( uploadBw );
 		assert( downloadBw );
@@ -152,6 +154,15 @@ class DnetHost {
 		if ( localAddress.length ) {
 			socket.bind( new IPv4Address( localAddress, localPort ) );
 		}
+		else {
+			socket.bind( new IPv4Address( "localhost" ) );
+		}
+
+		auto a = cast( IPv4Address )socket.localAddress;
+		assert( a !is null );
+
+		this.localAdr = a.toAddrString;
+		this.localPort = a.port;
 	}
 
 	/**
@@ -424,15 +435,17 @@ class DnetHost {
 		auto c = connections[typeToUtf8( from )];
 
 		c.userData = userData;
-		c.setup( from, downloadRate );
+		c.setup( from, downloadRate, localAdr, localPort );
 
 		// send connection acknowledgement back to the remote host
 		assert( c.downloadRateMax );
+		auto a = cast( IPv4Address )from;
+		assert( a !is null );
 		version ( Tango ) {
-			DnetChannel.transmitOOB( socket, from, "connection_response {0}", c.downloadRateMax );
+			DnetChannel.transmitOOB( socket, from, "connection_response {0} \"{1}\" {2}", c.downloadRateMax, a.toAddrString, a.port );
 		}
 		else {
-			DnetChannel.transmitOOB( socket, from, "connection_response %d", c.downloadRateMax );
+			DnetChannel.transmitOOB( socket, from, "connection_response %d \"%s\" %d", c.downloadRateMax, a.toAddrString, a.port );
 		}
 	}
 

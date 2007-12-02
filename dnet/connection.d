@@ -81,8 +81,10 @@ class DnetConnection {
 
 		// connection information
 		Address		remoteAddress;			// site we're connecting to
+		Address		publicAdr;				// our address as translated by a NAT
 		uint		challengeNumber;		// challenge number
 		int			connectionRetransmit;	// last connection packet dispatch time
+		int			connectionAttempts;		// how many times we have sent connection packet
 		char[]		userData;				// reference to user data
 
 		// flow control
@@ -216,7 +218,7 @@ class DnetConnection {
 	}
 
 	/**
-		Returns network latency value, in ms.
+		Returns network latency, in ms.
 	*/
 	int latency() {
 		return latencyValue;
@@ -227,6 +229,13 @@ class DnetConnection {
 	*/
 	bool isLocal() {
 		return local;
+	}
+
+	/**
+		Returns 'public' address if connection was initiated locally, otherwise returns 'local' address.
+	*/
+	Address publicAddress() {
+		return publicAdr;
 	}
 
 	/**
@@ -308,13 +317,14 @@ class DnetConnection {
 		this.userData = userData;
 
 		state = State.CHALLENGING;			// disconnected->challenging
+		connectionAttempts = 0;
 		connectionRetransmit = -9999;		// challenge request will be sent immediately
 	}
 
 	/**
 		Sets up the connection. After that data can be delivered reliably.
 	*/
-	package void setup( Address from, int downloadRate ) {
+	package void setup( Address from, int downloadRate, char[] publicAddressHost, ushort publicAddressPort ) {
 		{
 			auto a = cast( IPv4Address )from;
 			assert( a !is null );
@@ -336,6 +346,8 @@ class DnetConnection {
 		outgoingAcknowledge = 0;
 		reliableAcknowledge = 0;
 		lastReliableSequence = 0;
+
+		publicAdr = new IPv4Address( publicAddressHost, publicAddressPort );
 
 		// notify user
 		if ( host.connection !is null ) {
@@ -674,9 +686,17 @@ class DnetConnection {
 		Sends a connection request if time.
 	*/
 	private void transmitConnectionRequest() {
-		// send connection requests once in five seconds
-		if ( currentTime() - connectionRetransmit < 5000 ) {
+		// send connection requests once in a second
+		if ( currentTime() - connectionRetransmit < 1000 ) {
 			return;		// time hasn't come yet
+		}
+
+		if ( connectionAttempts >= 5 ) {
+			state = State.DISCONNECTED;
+			if ( host.disconnection ) {
+				host.disconnection( this, "connection refused" );
+			}
+			return;
 		}
 
 		switch ( state ) {
@@ -694,6 +714,7 @@ class DnetConnection {
 		}
 
 		connectionRetransmit = currentTime();
+		connectionAttempts++;
 	}
 
 	/**
@@ -729,6 +750,7 @@ class DnetConnection {
 		challengeNumber = dnetAtoi( args[1] );
 
 		state = State.CONNECTING;		// challenging -> connecting
+		connectionAttempts = 0;
 		connectionRetransmit = -9999;	// connection request will fire immediately
 	}
 
@@ -745,12 +767,11 @@ class DnetConnection {
 			}
 			return;
 		}
-		if ( args.length != 2 ) {
+		if ( args.length != 4 ) {
 			debugPrint( "malformed connection response" );
 			return;
 		}
-
-		setup( from, dnetAtoi( args[1] ) );
+		setup( from, dnetAtoi( args[1] ), args[2], dnetAtoi( args[3] ) );
 	}
 
 	/**
