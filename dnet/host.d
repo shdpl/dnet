@@ -62,14 +62,14 @@ class DnetHost {
 
 		/**
 			Called when connection request is processed to give user a chance to refuse connection.
-			userData is the data passed to DnetHost.connect on the remote side.
+			userInfo is the data passed to DnetHost.connect on the remote side.
 			reason may hold the rejection text which will be sent to the remote side.
 
 			See_Also: DnetHost.connect
 
-			Note: userData is located on stack.
+			Note: userInfo is located on stack.
 		*/
-		bool delegate( Address from, char[] userData, ref char[] reason ) connectionRequest;
+		bool delegate( Address from, char[] userInfo, ref char[] reason ) connectionRequest;
 
 		/**
 			Called when connection to the remote side has been established.
@@ -77,24 +77,17 @@ class DnetHost {
 		void delegate( DnetConnection c ) connection;
 
 		/**
+			Called when connection attempt has not succeeded.
+		*/
+		void delegate( DnetConnection c, char[] reason ) connectionRefused;
+
+		/**
 			Called when c is being disconnected.
 		*/
 		void delegate( DnetConnection c, char[] reason ) disconnection;
 
 		/**
-			Called when unknown out-of-band packet is received. args hold the arguments.
-			Return true if packet has been successfully processed, return false otherwise.
-			Note: args are located on stack.
-		*/
-		bool delegate( char[][] args ) oobPacket;
-
-		/**
-			Called when out-of-band 'message' packet from remote host has been received.
-		*/
-		void delegate( char[] text ) oobMessage;
-
-		/**
-			Called on every unrecognised command. args hold tokenized cmd.
+			Called on every unrecognised _command. args hold tokenized cmd.
 		*/
 		void delegate( DnetConnection c, char[] cmd, char[][] args ) command;
 
@@ -166,19 +159,19 @@ class DnetHost {
 	}
 
 	/**
-		Initiates a connection to a remote side identified by address and port. userData
+		Initiates a connection to a remote side identified by address and port. userInfo
 		will be delivered to remote side and passed to $(D_PSYMBOL connectionRequest).
 		It may not be longer than 1024 characters.
 		Returns created connection.
 
-		Note: userData is not copied, but referenced to.
+		Note: userInfo is not copied, but referenced to.
 	*/
-	DnetConnection connect( char[] address, ushort port, char[] userData = null ) {
-		assert( userData.length < 1024 );
+	DnetConnection connect( char[] address, ushort port, char[] userInfo = null ) {
+		assert( userInfo.length < 1024 );
 		debugPrint( "DnetHost.connectTo()" );
 
 		auto c = new DnetConnection( this, true );
-		c.connect( address, port, userData );
+		c.connect( address, port, userInfo );
 		connections[typeToUtf8( c.remoteAddress ).dup] = c;
 
 		c.downloadRateMax = downloadBw / connections.values.length;
@@ -334,16 +327,12 @@ class DnetHost {
 				oobConnectionResponse( args );
 				break;
 
-			case "message":
-				if ( args.length == 2 && oobMessage !is null ) {
-					oobMessage( args[1] );
-				}
+			case "connection_refused":
+				oobConnectionRefused( args );
 				break;
 
 			default:
-				if ( oobPacket !is null && !oobPacket( args ) ) {
-					debugPrint( "unknow OOB command " ~ args[0] );
-				}
+				debugPrint( "unknow OOB command " ~ args[0] );
 				break;
 		}
 	}
@@ -392,35 +381,35 @@ class DnetHost {
 		}
 
 		if ( args.length != 5 ) {
-			DnetChannel.transmitOOB( socket, from, "message \"malformed connection request\"" );
+			DnetChannel.transmitOOB( socket, from, "connection_refused \"malformed connection request\"" );
 			return;
 		}
 
 		int protoVer = dnetAtoi( args[1] );
 		int challenge = dnetAtoi( args[2] );
-		char[] userData = args[3];
+		char[] userInfo = args[3];
 		int downloadRate = dnetAtoi( args[4] );
 
 		if ( protoVer != PROTOCOL_VERSION ) {
-			DnetChannel.transmitOOB( socket, from, "message \"wrong DNet protocol version\"" );
+			DnetChannel.transmitOOB( socket, from, "connection_refused \"wrong DNet protocol version\"" );
 			return;
 		}
 
 		if ( ( typeToUtf8( from ) in challenges ) is null || challenge != challenges[typeToUtf8( from )].number ) {
-			DnetChannel.transmitOOB( socket, from, "message \"bad challenge\"" );
+			DnetChannel.transmitOOB( socket, from, "connection_refused \"bad challenge\"" );
 			return;
 		}
 
 		char[]	reason;
 
 		// acknowledge the user of a new connection
-		if ( connectionRequest && !connectionRequest( from, userData, reason ) ) {
+		if ( connectionRequest && !connectionRequest( from, userInfo, reason ) ) {
 			debugPrint( "connection rejected by user" );
 			version ( Tango ) {
-				DnetChannel.transmitOOB( socket, from, "message \"{0}\"", reason );
+				DnetChannel.transmitOOB( socket, from, "connection_refused \"{0}\"", reason );
 			}
 			else {
-				DnetChannel.transmitOOB( socket, from, "message \"%s\"", reason );
+				DnetChannel.transmitOOB( socket, from, "connection_refused \"%s\"", reason );
 			}
 			return;
 		}
@@ -434,7 +423,7 @@ class DnetHost {
 		}
 		auto c = connections[typeToUtf8( from )];
 
-		c.userData = userData;
+		c.userInfo = userInfo;
 		c.setup( from, downloadRate, localAdr, localPort );
 
 		// send connection acknowledgement back to the remote host
@@ -467,5 +456,21 @@ class DnetHost {
 			return;		// malicious attack OR bug in dnet
 		}
 		connections[typeToUtf8( from )].oobConnectionResponse( args, from );
+	}
+
+	/**
+		Processes OOB 'connection refused' command.
+	*/
+	private void oobConnectionRefused( char[][] args ) {
+		if ( ( typeToUtf8( from ) in connections ) is null ) {
+			return;
+		}
+		auto text = ( args.length == 2 ) ? args[1] : null;
+		auto c = connections[typeToUtf8( from )];
+
+		c.state = DnetConnection.State.DISCONNECTED;
+		if ( connectionRefused !is null ) {
+			connectionRefused( c, text );
+		}
 	}
 }

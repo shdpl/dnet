@@ -85,7 +85,7 @@ class DnetConnection {
 		uint		challengeNumber;		// challenge number
 		int			connectionRetransmit;	// last connection packet dispatch time
 		int			connectionAttempts;		// how many times we have sent connection packet
-		char[]		userData;				// reference to user data
+		char[]		userInfo;				// reference to user info
 
 		// flow control
 		int			uploadRateMax;			// maximum upload bandwidth (set by host)
@@ -115,6 +115,16 @@ class DnetConnection {
 		int			lastTransmit;		// time the last packet has been sent
 		int			packetTime;			// time the next packet should be sent
 	}
+
+	/// User data. Use it to store application-specific data. Note: Members are placed into an anonymous union.
+	struct UserData {
+		union {
+			Object	obj;				/// object reference
+			void *	ptr;				/// POD reference
+		}
+	}
+
+	UserData	userData;				/// Reference to user data.
 
 	/**
 		Constructor.
@@ -305,23 +315,23 @@ class DnetConnection {
 		}
 	}
 
-	/**
+	/*
 		Connect _to server (listening host).
 
 		See_Also: DnetHost.connect
-		Note: userData is not copied, but referenced _to.
+		Note: userInfo is not copied, but referenced _to.
 	*/
-	package void connect( char[] to, ushort port, char[] userData ) {
+	package void connect( char[] to, ushort port, char[] userInfo ) {
 		// set remote address
 		remoteAddress = new IPv4Address( to, port );
-		this.userData = userData;
+		this.userInfo = userInfo;
 
 		state = State.CHALLENGING;			// disconnected->challenging
 		connectionAttempts = 0;
 		connectionRetransmit = -9999;		// challenge request will be sent immediately
 	}
 
-	/**
+	/*
 		Sets up the connection. After that data can be delivered reliably.
 	*/
 	package void setup( Address from, int downloadRate, char[] publicAddressHost, ushort publicAddressPort ) {
@@ -333,7 +343,7 @@ class DnetConnection {
 
 		assert( downloadRate );
 		downloadRateMax = downloadRate;
-		userData = null;
+		userInfo = null;
 		state = State.CONNECTED;
 
 		lastReceive = currentTime();
@@ -355,7 +365,7 @@ class DnetConnection {
 		}
 	}
 
-	/**
+	/*
 		Checks if disconnection has completed or connection got timed out.
 	*/
 	package void checkTimeOut( int dropPoint, int disconnectPoint ) {
@@ -376,7 +386,7 @@ class DnetConnection {
 		}
 	}
 
-	/**
+	/*
 		Reads a packet. Called by host.
 	*/
 	package void readPacket( ubyte[] packet ) {
@@ -399,7 +409,7 @@ class DnetConnection {
 		lastReceive = currentTime();
 	}
 
-	/**
+	/*
 		Dispatches a packet.
 	*/
 	package void transmit() {
@@ -693,8 +703,8 @@ class DnetConnection {
 
 		if ( connectionAttempts >= 5 ) {
 			state = State.DISCONNECTED;
-			if ( host.disconnection ) {
-				host.disconnection( this, "connection refused" );
+			if ( host.connectionRefused ) {
+				host.connectionRefused( this, "connection refused" );
 			}
 			return;
 		}
@@ -705,10 +715,10 @@ class DnetConnection {
 			break;
 		case State.CONNECTING:
 			version ( Tango ) {
-				DnetChannel.transmitOOB( host.socket, remoteAddress, "connection_request {0} {1} \"{2}\" {3}", PROTOCOL_VERSION, challengeNumber, userData, downloadRateMax );
+				DnetChannel.transmitOOB( host.socket, remoteAddress, "connection_request {0} {1} \"{2}\" {3}", PROTOCOL_VERSION, challengeNumber, userInfo, downloadRateMax );
 			}
 			else {
-				DnetChannel.transmitOOB( host.socket, remoteAddress, "connection_request %d %d \"%s\" %d", PROTOCOL_VERSION, challengeNumber, userData, downloadRateMax );
+				DnetChannel.transmitOOB( host.socket, remoteAddress, "connection_request %d %d \"%s\" %d", PROTOCOL_VERSION, challengeNumber, userInfo, downloadRateMax );
 			}
 			break;
 		}
@@ -717,7 +727,7 @@ class DnetConnection {
 		connectionAttempts++;
 	}
 
-	/**
+	/*
 		Processes OOB challenge response. Called by host.
 	*/
 	package void oobChallengeResponse( char[][] args, Address from ) {
@@ -754,7 +764,7 @@ class DnetConnection {
 		connectionRetransmit = -9999;	// connection request will fire immediately
 	}
 
-	/**
+	/*
 		Processes OOB connection response. Called by host.
 	*/
 	package void oobConnectionResponse( char[][] args, Address from ) {
