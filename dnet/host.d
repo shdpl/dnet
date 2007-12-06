@@ -34,7 +34,7 @@ class DnetHost {
 		class Challenge {
 			this( Address addr ) {
 				address	= addr;
-				number	= dnetRand();
+				number	= dnetRand() & 0xFFFF;
 				time	= currentTime();
 			}
 
@@ -48,7 +48,7 @@ class DnetHost {
 		DnetAllocator			allocator;		// packet memory allocator
 
 		// communications
-		Socket		socket;
+		DnetSocket	socket;
 		Address		from;
 		char[]		localAdr;
 		ushort		localPort;
@@ -58,7 +58,11 @@ class DnetHost {
 	public {
 		int			uploadBw;		/// Available upload bandwidth, in bps
 		int			downloadBw;		/// Available download bandwidth, in bps
-		float		lossRatio;		/// Percentage of simulated packet loss, for development
+
+		int			simLatency;				/// Simulated latency, in ms
+		int			simJitter;				/// Simulated jitter, in ms
+		float		simDuplicate = 0.0f;	/// Simulated packet duplication, probability in range [0, 1]
+		float		simLoss = 0.0f;			/// Simulated packet loss, probability in range [0, 1]
 
 		/**
 			Called when connection request is processed to give user a chance to refuse connection.
@@ -101,11 +105,17 @@ class DnetHost {
 			Called upon message arrival.
 		*/
 		void delegate( DnetConnection c ) messageReceive;
-	}
 
-	invariant {
-		assert( lossRatio !is float.nan );
-		assert( lossRatio >= 0 && lossRatio <= 1 );
+		/**
+			Called when enumeration request is received. Return 0 if you don't want your host enumerated, else return
+			number of bytes written into hostInfo.
+		*/
+		int delegate( char[] userInfo, char[] hostInfo ) enumerationRequest;
+
+		/**
+			Called when enumeration response is received.
+		*/
+		void delegate( char[] hostInfo, Address from ) enumerationResponse;
 	}
 
 	/**
@@ -134,13 +144,21 @@ class DnetHost {
 		this.uploadBw = uploadBw;
 		this.downloadBw = downloadBw;
 		this.listen = listen;
-		this.lossRatio = 0.0f;
 
 		// create a socket to be used for communications
-		socket = new Socket( AddressFamily.INET, SocketType.DGRAM, ProtocolType.UDP );
+		socket = new DnetSocket( AddressFamily.INET, SocketType.DGRAM, ProtocolType.UDP );
 		socket.blocking = false;
 		version ( Tango ) {
 			from = socket.newFamilyObject();
+		}
+
+		// make it broadcast capable
+		try {
+			uint[1]	value = 1;
+			socket.setOption( SocketOptionLevel.SOCKET, SocketOption.SO_BROADCAST, value );
+		}
+		catch ( Exception e ) {
+			debugPrint( "DnetHost.this(): " ~ typeToUtf8( e ) );
 		}
 
 		// bind socket to address
@@ -183,6 +201,13 @@ class DnetHost {
 		Sends and receives data.
 	*/
 	void emit() {
+		// update latency simulation
+		socket.simLatency = simLatency;
+		socket.simJitter = simJitter;
+		socket.simDuplicate = simDuplicate;
+		socket.simLoss = simLoss;
+		socket.emit();
+
 		ubyte[PACKET_LENGTH]	buf;
 		char[][MAX_COMMAND_ARGS]args;
 		int						dropPoint = currentTime - 8000;
@@ -216,13 +241,6 @@ class DnetHost {
 
 			if ( len < 4 ) {
 				continue;
-			}
-			
-			// simulate packet loss
-			if ( lossRatio > 0.0f ) {
-				if ( dnetRandFloat() < lossRatio ) {
-					continue;		// oops
-				}
 			}
 
 			// process out-of-band messages
@@ -287,6 +305,19 @@ class DnetHost {
 	}
 
 	/**
+		Starts host enumeration by broadcasting packet containing userInfo. Enumeration requests will trigger
+		enumerationRequest event on a remote host. It may reply and thus issue enumerationResponse on local host.
+	*/
+	void enumerateHosts( char[] userInfo, Address broadcastAddress ) {
+		version ( Tango ) {
+			DnetChannel.transmitOOB( socket, broadcastAddress, "enumerationRequest {0} \"{1}\"", PROTOCOL_VERSION, userInfo );
+		}
+		else {
+			DnetChannel.transmitOOB( socket, broadcastAddress, "enumerationRequest %d \"%s\"", PROTOCOL_VERSION, userInfo );
+		}
+	}
+
+	/**
 		Allocates bandwidth between connections.
 	*/
 	private void allocateBandwidth() {
@@ -331,6 +362,14 @@ class DnetHost {
 				oobConnectionRefused( args );
 				break;
 
+			case "enumerationRequest":
+				oobEnumerationRequest( args );
+				break;
+
+			case "enumerationResponse":
+				oobEnumerationResponse( args );
+				break;
+
 			default:
 				debugPrint( "unknow OOB command " ~ args[0] );
 				break;
@@ -345,6 +384,50 @@ class DnetHost {
 			return;		// malicious attack
 		}
 		connections[typeToUtf8( from )].readPacket( buf );
+	}
+	/**
+
+		Processes OOB enumeration request.
+	*/
+	private void oobEnumerationRequest( char[][] args ) {
+		if ( enumerationRequest is null ) {
+			return;
+		}
+
+		if ( args.length != 3 ) {
+			return;
+		}
+
+		auto protoVer = dnetAtoi( args[1] );
+		auto userInfo = args[2];
+
+		if ( protoVer != PROTOCOL_VERSION ) {
+			return;
+		}
+
+		char[1024]	hostInfo;
+		auto len = enumerationRequest( userInfo, hostInfo );
+		if ( len ) {
+			version ( Tango ) {
+				DnetChannel.transmitOOB( socket, from, "enumerationResponse \"{0}\"", hostInfo[0..len] );
+			}
+			else {
+				DnetChannel.transmitOOB( socket, from, "enumerationResponse \"%s\"", hostInfo[0..len] );
+			}
+		}
+	}
+
+	/**
+		Processes OOB enumeration response.
+	*/
+	private void oobEnumerationResponse( char[][] args ) {
+		if ( enumerationResponse is null ) {
+			return;
+		}
+		if ( args.length != 2 ) {
+			return;
+		}
+		enumerationResponse( args[1], from );
 	}
 
 	/**

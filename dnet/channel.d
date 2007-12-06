@@ -13,6 +13,7 @@ else {
 }
 
 import dnet.buffer;
+import dnet.fifo;
 import dnet.socket;
 import dnet.utils;
 import dnet.protocol;
@@ -39,7 +40,8 @@ package struct DnetChannel {
 		Clears internal state.
 	*/
 	void clear() {
-		dropCount = 0;
+		receivedCount = 0;
+		lostCount = 0;
 
 		incomingSequence = 0;
 		outgoingSequence = 1;
@@ -218,7 +220,7 @@ package struct DnetChannel {
 			return 0;
 		}
 
-		dropCount = sequence - ( incomingSequence + 1 );
+		auto dropCount = sequence - ( incomingSequence + 1 );
 
 		// assemble fragments
 		if ( fragmented ) {
@@ -265,6 +267,10 @@ package struct DnetChannel {
 		}
 
 		incomingSequence = sequence;
+		if ( dropCount ) {
+			lostCount++;
+		}
+		receivedCount++;
 
 		return write.slice.length;
 	}
@@ -273,8 +279,7 @@ package struct DnetChannel {
 		Socket	socket;
 		Address	remoteAddress;
 
-		int		dropCount;						// the number of packets dropped
-												// between current and previous
+		int		lostCount, receivedCount;
 
 		// Sequence numbers.
 		uint	incomingSequence;

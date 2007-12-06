@@ -229,10 +229,10 @@ unittest {
 */
 int dnetRand() {
 	version ( Tango ) {
-		return Random.shared.next( 65536 );
+		return Random.shared.next( 0xFFFFFFFF );
 	}
 	else {
-		return rand() % 65536;
+		return rand() % 0xFFFFFFFF;
 	}
 }
 

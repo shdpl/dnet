@@ -18,6 +18,10 @@ class ClientHost {
 		host.connection = &handleConnection;
 		host.messageSend = &handleMessageSend;
 		host.messageReceive = &handleMessageReceive;
+
+		host.simLatency = 100;
+		host.simJitter = 50;
+		Stdout.formatln( "client: set latency to {0}, jitter to {1}", host.simLatency, host.simJitter );
 	}
 
 	bool handleConnectionRequest( Address from, char[] userData, ref char[] reason ) {
@@ -95,7 +99,7 @@ int main( char[][] args ) {
 	client.host.connect( "localhost", 1234 );
 
 	while ( true ) {
-		if ( client.host.getAll.values.length ) {
+		if ( client.host.getAll.values.length && client.host.getAll.values[0] !is null ) {
 			if ( nextPrintTime < currentTime() ) {
 				Stdout( client.host.getAll.values[0].latency ).newline;
 				nextPrintTime = currentTime + 2000;

@@ -28,7 +28,7 @@ class ClientHost {
 
 	void handleConnection( DnetConnection c ) {
 		debugPrint( "client: connected to server" );
-		host.lossRatio = LOSS_RATIO;	// this is set here so you won't have to wait for the connection attempt to succeed
+		host.simLoss = LOSS_RATIO;	// this is set here so you won't have to wait for the connection attempt to succeed
 	}
 
 	void handleMessageSend( DnetConnection c ) {
@@ -76,7 +76,7 @@ class ServerHost {
 
 	void handleConnection( DnetConnection c ) {
 		debugPrint( "server: client connected" );
-		host.lossRatio = LOSS_RATIO;	// this is set here so you won't have to wait for the connection attempt to succeed
+		host.simLoss = LOSS_RATIO;	// this is set here so you won't have to wait for the connection attempt to succeed
 	}
 
 	void handleMessageSend( DnetConnection c ) {

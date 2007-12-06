@@ -221,17 +221,27 @@ class DnetConnection {
 	}
 
 	/**
-		Returns true if connected, false is returned otherwise.
+		Returns true if _connected, false is returned otherwise.
 	*/
 	bool connected() {
 		return ( state >= State.CONNECTED ) ? true : false;
 	}
 
 	/**
-		Returns network latency, in ms.
+		Returns estimated network _latency, in ms.
 	*/
 	int latency() {
 		return latencyValue;
+	}
+
+	/**
+		Returns estimated packet loss ratio.
+	*/
+	float lossRatio() {
+		if ( !channel.receivedCount ) {
+			return 0.0f;
+		}
+		return cast( float )channel.lostCount / cast( float )channel.receivedCount;
 	}
 
 	/**
