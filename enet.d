@@ -1,3 +1,5 @@
+extern(C):
+
 version(Windows){
   pragma(lib, "enet.lib");
   pragma(lib, "ws2_32.lib");
@@ -23,6 +25,7 @@ else {
 }
 
 
+
 struct ENetBuffer {
     size_t dataLength;
     void * data;
@@ -30,13 +33,6 @@ struct ENetBuffer {
 
 // ==== callbacks.h ====
 
-/+
-struct ENetCallbacks {
-    void* (ENET_CALLBACK * malloc) (size_t size);
-    void (ENET_CALLBACK * free) (void * memory);
-    int (ENET_CALLBACK * rand) (void);
-}
-+/
 
 struct ENetCallbacks {
     void* function(size_t size) malloc;
@@ -365,7 +361,7 @@ enum ENetPeerState {
    ENET_PEER_STATE_ZOMBIE                      = 9 
 }
 
-const int ENET_BUFFER_MAXIMUM = 1 + 2 * ENET_PROTOCOL_MAXIMUM_PACKET_COMMANDS;
+const uint ENET_BUFFER_MAXIMUM = 1 + 2 * ENET_PROTOCOL_MAXIMUM_PACKET_COMMANDS;
 
 enum {
    ENET_HOST_RECEIVE_BUFFER_SIZE          = 256 * 1024,
@@ -542,8 +538,6 @@ struct ENetEvent {
    uint          data;      /**< data associated with the event, if appropriate */
    ENetPacket *         packet;    /**< packet associated with the event, if appropriate */
 }
-
-extern(C):
 
 
 /** 

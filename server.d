@@ -4,7 +4,7 @@ import std.stdio;
 void main(){
   scope(exit) enet_deinitialize;
 
-  assert(enet_initialize == 0);
+  assert(enet_initialize == 0); // must be 0 if successfull
 
   
   ENetAddress address;
@@ -30,7 +30,7 @@ void main(){
   
   writefln("start");  
   while(true){
-        writefln("check");    
+    writefln("check");    
 
     ENetEvent event;
   
@@ -70,6 +70,7 @@ void main(){
               break;
           default:
             writefln("unknown packet");
+            
         } // switch
         
       } // while packet

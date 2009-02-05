@@ -1,16 +1,16 @@
 Guidelines
 ==========
 
-This is port of enet networking library (http://enet.bespin.org) to Digital Mars D language.
-You need enet.d module for import and to link with: 
+This is D port of enet library (http://enet.bespin.org).
+You'll need import enet.d to your project and link it with: 
   * enet.lib (static import lib for Windows compiled with DMC) 
-  or
-  * libenet.a (static import lib for Linux compiledon Fedora Core 3 with GCC)
+    or
+  * libenet.a (static import lib for Linux compiled on Fedora Core 3 with GCC)
   
-With Windows compiling you will need extra libs: winmm.lib and ws2_32.lib.
+On Windows you'll need extra libs: winmm.lib and ws2_32.lib.
 Everything is defined in enet.d, so sheck the source.
 
-For example you got client.d / server.d programs. Compile them with build_windows.bat scripts.
+Example can be found in client.d/server.d programs. Compile them with build_windows.bat scripts.
 
 Also, use docs from enet_docs folder as your primary learning info.
 
