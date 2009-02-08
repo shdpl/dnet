@@ -3,9 +3,9 @@ Guidelines
 
 This is D port of enet library (http://enet.bespin.org).
 You'll need import enet.d to your project and link it with: 
-  * enet.lib (static import lib for Windows compiled with DMC) 
+  * lib/enet.lib (static import lib for Windows compiled with DMC) 
     or
-  * libenet.a (static import lib for Linux compiled on Fedora Core 3 with GCC)
+  * lib/libenet.a (static import lib for Linux compiled on Fedora Core 3 with GCC)
   
 On Windows you'll need extra libs: winmm.lib and ws2_32.lib.
 Everything is defined in enet.d, so sheck the source.
