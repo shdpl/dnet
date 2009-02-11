@@ -1,16 +1,15 @@
 /// Utility for creating bit accurate instead of byte sized packets.
-/// *** MIGHT NOT FUNCTION AT ALL ***
 /// See unittest section at the bottom.
 
 import std.bitarray;
 import std.stdio;
 import std.math;
 
-/// Packet that can contain values (numbers and strings) of bit precision (not byte).
-/// Header contains length of data part by 1..4 bytes (variable number).
-/// If byte is < 128 then next byte is part of the header.
-/// Maximum packet data length is 127^3*255 ~= 500mb
-class Packet {
+/// BitPacket that can contain values (numbers and strings) of bit precision (not byte).
+/// Header is 1 or 4 bytes long and contains length of data part.
+/// If data part length is less tha 128, then header is 1 byte, otherwise it is 4 bytes long.
+/// Maximum packet data length is 127*256^3 ~= 2.1gb
+class BitPacket {
   BitArray a;
   uint idx;  // current index
   uint size; // number of bits used
@@ -107,25 +106,30 @@ class Packet {
 
   
 
-  /// Creates header and dumps packet in array of bytes ready for network transmittion etc. It rounds length to byte size.
+  /// Creates header and dumps packet in array of bytes ready for network transmittion etc.
+  /// It rounds length to byte size.
   ubyte[] dump(){
     int data_length = cast(int)((size + 7) / 8); // number of bytes of data
-    //writefln(toString);
     void[] tmp = (cast(void[])a)[0 .. data_length];
     
     // make header
     ubyte[] header;
     if (data_length < 128)
-      header ~= data_length;
-    else
-      assert(0, "add 2 byte header encoder handling!");
+      header = [data_length];
+    else if (data_length < int.max) {
+      int i = -data_length;
+      header = *cast(ubyte[4]*)(&i); // first bit (sign flag) will be 1 becouse it is negative
+    }
+    else 
+      assert(0, "packet data too big");
+      
     
     return header ~ cast(ubyte[])tmp;
   }
 
   /// Extracts packets from begining of stream, and return them as array. Stream is shortened.
-	static Packet[] extract(ref ubyte[] stream){
-    Packet[] packets;
+	static BitPacket[] extract(ref ubyte[] stream){
+    BitPacket[] packets;
     while(true){
       if (stream.length > 0){
         // get header length
@@ -136,12 +140,14 @@ class Packet {
           data_length = u;
           header_length = 1;
         }
-        else
-          assert(0, "add 2 byte header decoder handling!");
+        else {
+          data_length = -*(cast(int*)stream.ptr);
+          header_length = 4;
+        }
         
         
         if (stream.length >= header_length + data_length){
-          Packet p = new Packet(stream[header_length .. header_length + data_length]);
+          BitPacket p = new BitPacket(stream[header_length .. header_length + data_length]);
           packets ~= p;
           stream = stream[header_length + data_length .. $];
         }
@@ -169,19 +175,23 @@ class Packet {
 unittest {
   ubyte[] s; // stream for sending ower network etc.
 
-  Packet p0 = new Packet; // first packet
+  char[] tmp_string;
+  tmp_string.length = 256; // make it bigger than 127
+
+  BitPacket p0 = new BitPacket; // first packet
   p0.add(3, true, 3); // add some integer, see function description for details
   p0.add(-5, true, 3);
   p0.add("1234567890"); // add some string
   s ~= p0.dump; // append bytes to stream
 
-  Packet p1 = new Packet;
-  p1.add(66, false, 7);
+  BitPacket p1 = new BitPacket;
+  p1.add(66, false, 7); // store number 66 as unsigned int with exaclty 7 bits of storage space
   p1.add("HELLO!");
-  p1.add(-34567, true, 25);
+  p1.add(-34567, true, 25); // store negative number as signed, with 25 bits for value (1 extra bit will be used becouse of signed)
+  p1.add(tmp_string); // use big string to test packet size > 127
   s ~= p1.dump;
 
-  Packet[] ps = Packet.extract(s); // packet decoding, removes decoded bytes from stream
+  BitPacket[] ps = BitPacket.extract(s); // packet decoding, removes decoded bytes from stream
   assert(s.length == 0);
   assert(ps.length == 2);
   
@@ -192,8 +202,9 @@ unittest {
   assert(ps[1].get(false, 7) == 66);
   assert(ps[1].get == "HELLO!");
   assert(ps[1].get(true, 25) == -34567);
+  assert(ps[1].get == tmp_string);
   
-  writefln("unittest Packet OK");
+  writefln("unittest BitPacket OK");
 }  
 
 // in case if you want to compile this module standalone  
