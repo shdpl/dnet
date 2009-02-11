@@ -9,27 +9,20 @@ import std.math;
 /// Header is 1 or 4 bytes long and contains length of data part.
 /// If data part length is less tha 128, then header is 1 byte, otherwise it is 4 bytes long.
 /// Maximum packet data length is 127*256^3 ~= 2.1gb
-class BitPacket {
+struct BitPacket {
   BitArray a;
-  uint idx;  // current index
-  uint size; // number of bits used
+  uint idx = 0;  // current index
+  uint size = 0; // number of bits used
 
-  /// Creates empty packet.
-  this(){
-    idx = 0;
-    size = 0;
-    a.length = 64;
-  }
-
-  /// Creates packet and populates data. Pointer is set at the begining.
-  this(ubyte[] data){
+  /// Populates data. Pointer is set at the begining.
+  void load(ubyte[] data){
     idx = 0;
     a.init(data.dup, data.length * 8);
     size = data.length * 8;
   }
 
   /// Checks if array cann accept this number of bits and resizes it if needed. Should be called before write.
-  private void checkSize(uint len){
+  void checkSize(uint len){
     if (idx + len > a.length)
       a.length = a.length + len + 64;
   }
@@ -147,7 +140,8 @@ class BitPacket {
         
         
         if (stream.length >= header_length + data_length){
-          BitPacket p = new BitPacket(stream[header_length .. header_length + data_length]);
+          BitPacket p;
+          p.load(stream[header_length .. header_length + data_length]);
           packets ~= p;
           stream = stream[header_length + data_length .. $];
         }
@@ -178,13 +172,13 @@ unittest {
   char[] tmp_string;
   tmp_string.length = 256; // make it bigger than 127
 
-  BitPacket p0 = new BitPacket; // first packet
+  BitPacket p0; // first packet
   p0.add(3, true, 3); // add some integer, see function description for details
   p0.add(-5, true, 3);
   p0.add("1234567890"); // add some string
   s ~= p0.dump; // append bytes to stream
 
-  BitPacket p1 = new BitPacket;
+  BitPacket p1;
   p1.add(66, false, 7); // store number 66 as unsigned int with exaclty 7 bits of storage space
   p1.add("HELLO!");
   p1.add(-34567, true, 25); // store negative number as signed, with 25 bits for value (1 extra bit will be used becouse of signed)
