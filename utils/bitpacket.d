@@ -9,7 +9,7 @@ import std.math;
 /// Header is 1 or 4 bytes long and contains length of data part.
 /// If data part length is less tha 128, then header is 1 byte, otherwise it is 4 bytes long.
 /// Maximum packet data length is 127*256^3 ~= 2.1gb
-struct BitPacket {
+class BitPacket {
   BitArray a;
   uint idx = 0;  // current index
   uint size = 0; // number of bits used
@@ -21,6 +21,15 @@ struct BitPacket {
     size = data.length * 8;
   }
 
+  /// Copies packet.
+  BitPacket copy(){
+    BitPacket p = new BitPacket;
+    p.idx = idx;
+    p.a = a.dup;
+    p.size = size;
+    return p;
+  }
+  
   /// Checks if array cann accept this number of bits and resizes it if needed. Should be called before write.
   void checkSize(uint len){
     if (idx + len > a.length)
@@ -67,7 +76,7 @@ struct BitPacket {
   
   /// Append string as byte array. First two bytes are string length.
   void add(char[] value){
-    if (value.length == 0) return;
+    
     assert(value.length < ushort.max);
     add(value.length, false, 16); // write string length in bytes
     
@@ -140,7 +149,7 @@ struct BitPacket {
         
         
         if (stream.length >= header_length + data_length){
-          BitPacket p;
+          BitPacket p = new BitPacket;
           p.load(stream[header_length .. header_length + data_length]);
           packets ~= p;
           stream = stream[header_length + data_length .. $];
@@ -172,16 +181,17 @@ unittest {
   char[] tmp_string;
   tmp_string.length = 256; // make it bigger than 127
 
-  BitPacket p0; // first packet
+  BitPacket p0 = new BitPacket; // first packet
   p0.add(3, true, 3); // add some integer, see function description for details
   p0.add(-5, true, 3);
   p0.add("1234567890"); // add some string
   s ~= p0.dump; // append bytes to stream
 
-  BitPacket p1;
+  BitPacket p1 = new BitPacket;
   p1.add(66, false, 7); // store number 66 as unsigned int with exaclty 7 bits of storage space
   p1.add("HELLO!");
   p1.add(-34567, true, 25); // store negative number as signed, with 25 bits for value (1 extra bit will be used becouse of signed)
+  p1.add("");
   p1.add(tmp_string); // use big string to test packet size > 127
   s ~= p1.dump;
 
@@ -196,6 +206,7 @@ unittest {
   assert(ps[1].get(false, 7) == 66);
   assert(ps[1].get == "HELLO!");
   assert(ps[1].get(true, 25) == -34567);
+  assert(ps[1].get == "");
   assert(ps[1].get == tmp_string);
   
   writefln("unittest BitPacket OK");
